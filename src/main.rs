@@ -13,9 +13,9 @@ use std::env;
 use std::error::Error;
 use std::io::BufReader;
 use std::process;
-use walkdir::WalkDir;
-use std::thread;
 use std::sync::mpsc;
+use std::thread;
+use walkdir::WalkDir;
 
 mod playlist;
 mod song;
@@ -121,15 +121,12 @@ fn main() {
 
     let (tx, rx) = mpsc::channel();
 
-    thread::spawn(move || {
-        loop {
-            let cmd: String = read!();
-            tx.send(cmd).unwrap();
-        }
+    thread::spawn(move || loop {
+        let cmd: String = read!();
+        tx.send(cmd).unwrap();
     });
 
     loop {
-
         playlist.update();
 
         if let Ok(c) = &rx.try_recv() {

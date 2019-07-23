@@ -1,8 +1,8 @@
+use rodio::Sink;
 use std::error::Error;
 use std::io::BufReader;
-use walkdir::DirEntry;
-use rodio::Sink;
 use std::time::Duration;
+use walkdir::DirEntry;
 
 pub struct Song {
     pub loc: DirEntry,

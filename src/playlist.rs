@@ -1,8 +1,8 @@
 use super::Song;
-use rodio::{Device, Sink};
-use rand::thread_rng;
 use rand::seq::SliceRandom;
-use std::time::{Duration, SystemTime};
+use rand::thread_rng;
+use rodio::{Device, Sink};
+use std::time::SystemTime;
 
 pub struct Playlist {
     songs: Vec<Song>,
@@ -16,7 +16,12 @@ impl Playlist {
         let device = rodio::default_output_device().unwrap();
         let sink = rodio::Sink::new(&device);
         let start = SystemTime::now();
-        Playlist { songs, device, sink, start }
+        Playlist {
+            songs,
+            device,
+            sink,
+            start,
+        }
     }
 
     pub fn play_next(&mut self) {
@@ -24,7 +29,6 @@ impl Playlist {
         self.stop_sink();
         self.songs[0].play(&self.sink).unwrap();
         self.reset_time();
-        // self.reload_sink();
     }
 
     pub fn random_shuffle(&mut self) {
@@ -46,7 +50,7 @@ impl Playlist {
     fn is_song_finished(&self) -> bool {
         let now = SystemTime::now();
         if now.duration_since(self.start).unwrap().as_secs() > self.songs[0].duration.as_secs() {
-            return true
+            return true;
         }
 
         false
@@ -56,11 +60,4 @@ impl Playlist {
         self.sink.stop();
         self.sink = rodio::Sink::new(&self.device);
     }
-
-    // fn reload_sink(&mut self) {
-    //     self.stop_sink();
-    //     for song in &self.songs {
-    //         song.add_to_sink(&self.sink).unwrap();
-    //     }
-    // }
 }
