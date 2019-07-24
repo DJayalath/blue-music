@@ -192,6 +192,7 @@ pub struct Model {
     current_duration: u64,
     current_time: u64,
     play_image: Image,
+    stopped: bool,
 }
 
 #[widget]
@@ -206,6 +207,7 @@ impl Widget for Win {
             current_duration: 0,
             current_time: 0,
             play_image: new_icon(PLAY_ICON),
+            stopped: true,
         }
     }
 
@@ -214,14 +216,38 @@ impl Widget for Win {
             // A call to self.label1.set_text() is automatically inserted by the
             // attribute every time the model.counter attribute is updated.
             Msg::Open => self.open(),
-            Msg::PlayPause => (),
+            Msg::PlayPause => {
+                if !self.model.stopped {
+                    self.set_play_icon(PLAY_ICON);
+                }
+            },
             Msg::Previous => (),
-            Msg::Stop => (),
+            Msg::Stop => {
+                self.set_current_time(0);
+                self.model.current_duration = 0;
+                self.model.cover_visible = false;
+                self.set_play_icon(PLAY_ICON);
+            },
             Msg::Next => (),
             Msg::Remove => (),
             Msg::Save => {show_save_dialog(&self.window).unwrap();},
             Msg::Quit => gtk::main_quit(),
         }
+    }
+
+    fn init_view(&mut self) {
+        self.toolbar.show_all();
+    }
+
+    fn set_current_time(&mut self, time: u64) {
+        self.model.current_time = time;
+        self.model.adjustment.set_value(time as f64);
+    }
+
+    fn set_play_icon(&self, icon: &str) {
+        self.model.play_image.set_from_file(
+            format!("assets/{}.png", icon)
+        );
     }
 
     view! {
@@ -298,10 +324,6 @@ impl Widget for Win {
             // the GTK+ callback.
             delete_event(_, _) => (Msg::Quit, Inhibit(false)),
         }
-    }
-
-    fn init_view(&mut self) {
-        self.toolbar.show_all();
     }
 }
 
