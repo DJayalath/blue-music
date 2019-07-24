@@ -11,18 +11,45 @@ extern crate relm;
 #[macro_use]
 extern crate relm_derive;
 
+use std::path::PathBuf;
 use relm::{Relm, Update, Widget};
-use gtk::prelude::*;
+use gtk::{
+    Adjustment,
+    AdjustmentExt,
+    BoxExt,
+    ButtonsType,
+    DialogExt,
+    DialogFlags,
+    FileChooserAction,
+    FileChooserDialog,
+    FileChooserExt,
+    FileFilter,
+    GtkWindowExt,
+    Image,
+    ImageExt,
+    Inhibit,
+    LabelExt,
+    MessageDialog,
+    MessageType,
+    OrientableExt,
+    ScaleExt,
+    ToolButtonExt,
+    WidgetExt,
+    Window,
+};
+// use gtk::prelude::*;
 use gtk::Orientation::{Vertical, Horizontal};
-use gtk::Image;
-use gtk::{OrientableExt, ToolButtonExt};
-use gtk::{GtkWindowExt, Inhibit, WidgetExt};
+// use gtk::Image;
+// use gtk::{OrientableExt, ToolButtonExt};
+// use gtk::{GtkWindowExt, Inhibit, WidgetExt};
 use gdk_pixbuf::Pixbuf;
-use gtk::{Adjustment, BoxExt, ImageExt, LabelExt, ScaleExt};
 use relm_derive::widget;
 
+use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
 pub const PLAY_ICON: &str = "gtk-media-play";
+const RESPONSE_ACCEPT: i32 = GTK_RESPONSE_ACCEPT as i32;
+const RESPONSE_CANCEL: i32 = GTK_RESPONSE_CANCEL as i32;
 
 use playlist::Playlist;
 use rodio::Source;
@@ -186,18 +213,19 @@ impl Widget for Win {
         match event {
             // A call to self.label1.set_text() is automatically inserted by the
             // attribute every time the model.counter attribute is updated.
-            Msg::Open => (),
+            Msg::Open => self.open(),
             Msg::PlayPause => (),
             Msg::Previous => (),
             Msg::Stop => (),
             Msg::Next => (),
             Msg::Remove => (),
-            Msg::Save => (),
+            Msg::Save => {show_save_dialog(&self.window).unwrap();},
             Msg::Quit => gtk::main_quit(),
         }
     }
 
     view! {
+        #[name="window"]
         gtk::Window {
             title: "Blue Music",
             gtk::Box {
@@ -277,6 +305,27 @@ impl Widget for Win {
     }
 }
 
+impl Win {
+    fn open(&self) {
+    let file = show_open_dialog(&self.window);
+    if let Some(file) = file {
+        let ext = file.extension().map(|ext| ext.to_str().unwrap().to_string());
+        if let Some(ext) = ext {
+            match ext.as_str() {
+                "mp3" => (),
+                "m3u" => (),
+                extension => {
+                    let dialog = MessageDialog::new(Some(&self.window), DialogFlags::empty(), MessageType::Error,
+                    ButtonsType::Ok, &format!("Cannot open file with extension .{}", extension));
+                    dialog.run();
+                    dialog.destroy();
+                },
+            }
+        }
+    }
+}
+}
+
 fn millis_to_minutes(millis: u64) -> String {
     let mut seconds = millis / 1_000;
     let minutes = seconds / 60;
@@ -288,4 +337,46 @@ fn new_icon(icon: &str) -> Image {
     Image::new_from_file(
         format!("./assets/{}.png", icon)
     )
+}
+
+fn show_open_dialog(parent: &Window) -> Option<PathBuf> {
+    let mut file = None;
+    let dialog = FileChooserDialog::new(Some("Select an MP3 audio file"), Some(parent), FileChooserAction::Open);
+
+    let mp3_filter = FileFilter::new();
+    mp3_filter.add_mime_type("audio/mp3");
+    mp3_filter.set_name("MP3 audio file");
+    dialog.add_filter(&mp3_filter);
+
+    let m3u_filter = FileFilter::new();
+    m3u_filter.add_mime_type("audio/x-mpegurl");
+    m3u_filter.set_name("M3U playlist file");
+    dialog.add_filter(&m3u_filter);
+
+    dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+    dialog.add_button("Accept", gtk::ResponseType::Accept);
+    let result = dialog.run();
+    if result == RESPONSE_ACCEPT {
+        file = dialog.get_filename();
+    }
+    dialog.destroy();
+    file
+}
+
+fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
+    let mut file = None;
+    let dialog = FileChooserDialog::new(Some("Choose a destination M3U playlist file"), Some(parent), FileChooserAction::Save);
+    let filter = FileFilter::new();
+    filter.add_mime_type("audio/x-mpegurl");
+    filter.set_name("M3U playlist file");
+    dialog.set_do_overwrite_confirmation(true);
+    dialog.add_filter(&filter);
+    dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+    dialog.add_button("Save", gtk::ResponseType::Accept);
+    let result = dialog.run();
+    if result == RESPONSE_ACCEPT {
+        file = dialog.get_filename();
+    }
+    dialog.destroy();
+    file
 }
