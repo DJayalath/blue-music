@@ -1,37 +1,37 @@
-use relm::Widget;
+use gdk_pixbuf::{InterpType, Pixbuf, PixbufLoader, PixbufLoaderExt};
 use gtk;
-use gtk::{TreeViewExt,
-            WidgetExt,
-            CellLayoutExt,
-            CellRendererPixbuf,
-            CellRendererText,
-            TreeViewColumn,
-            TreeViewColumnExt,
-            ListStore,
-            GtkListStoreExt,
-            GtkListStoreExtManual,
-            ToValue,
-            TreeIter,
-            TreeModelExt,
-            TreeSelectionExt,
-        };
-use relm_derive::widget;
-use gdk_pixbuf::{Pixbuf,
-                PixbufLoader,
-                PixbufLoaderExt,
-                InterpType,
-                };
+use gtk::{
+    CellLayoutExt, CellRendererPixbuf, CellRendererText, GtkListStoreExt, GtkListStoreExtManual,
+    ListStore, ToValue, TreeIter, TreeModelExt, TreeSelectionExt, TreeViewColumn,
+    TreeViewColumnExt, TreeViewExt, WidgetExt,
+};
 use gtk::{StaticType, Type};
+use m3u;
+use metaflac::Tag;
 use relm::Relm;
+use relm::Widget;
+use relm_derive::widget;
+use rodio::Sink;
+use std::cmp::max;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::path::PathBuf;
-use metaflac::Tag;
-use m3u;
-use std::fs::File;
-use std::cmp::max;
+use std::thread;
+use std::sync::mpsc;
+use lazy_static;
+
+use crate::player::Player;
 
 use self::Msg::*;
 use self::Visibility::*;
+
+#[derive(Clone)]
+pub enum PlayerMsg {
+    PlayerPlay,
+    PlayerStop,
+    PlayerTime(u64),
+}
 
 #[derive(PartialEq)]
 enum Visibility {
@@ -70,8 +70,11 @@ pub enum Msg {
 pub struct Model {
     current_song: Option<String>,
     model: ListStore,
-    relm: Relm<Playlist>
+    relm: Relm<Playlist>,
+    player: Player,
 }
+
+unsafe impl Send for Model {}
 
 #[widget]
 impl Widget for Playlist {
@@ -90,6 +93,7 @@ impl Widget for Playlist {
                 Pixbuf::static_type(),
             ]),
             relm: relm.clone(),
+            player: Player::new(),
         }
     }
 
@@ -98,7 +102,7 @@ impl Widget for Playlist {
             AddSong(path) => self.add(&path),
             LoadSong(path) => self.load(&path),
             NextSong => self.next(),
-            PauseSong => (),
+            PauseSong => self.pause(),
             PlaySong => self.play(),
             PreviousSong => self.previous(),
             RemoveSong => self.remove_selection(),
@@ -126,18 +130,20 @@ impl Widget for Playlist {
 
 impl Playlist {
 
+    fn pause(&mut self) {
+        self.model.player.pause();
+    }
+
     fn next(&mut self) {
         let selection = self.treeview.get_selection();
-        let next_iter =
-            if let Some((_, iter)) = selection.get_selected() {
-                if !self.model.model.iter_next(&iter) {
-                    return;
-                }
-                Some(iter)
+        let next_iter = if let Some((_, iter)) = selection.get_selected() {
+            if !self.model.model.iter_next(&iter) {
+                return;
             }
-            else {
-                self.model.model.get_iter_first()
-            };
+            Some(iter)
+        } else {
+            self.model.model.get_iter_first()
+        };
         if let Some(ref iter) = next_iter {
             selection.select_iter(iter);
             self.play();
@@ -146,16 +152,16 @@ impl Playlist {
 
     fn previous(&mut self) {
         let selection = self.treeview.get_selection();
-        let previous_iter =
-            if let Some((_, iter)) = selection.get_selected() {
-                if !self.model.model.iter_previous(&iter) {
-                    return;
-                }
-                Some(iter)
+        let previous_iter = if let Some((_, iter)) = selection.get_selected() {
+            if !self.model.model.iter_previous(&iter) {
+                return;
             }
-            else {
-                self.model.model.iter_nth_child(None, max(0, self.model.model.iter_n_children(None) - 1))
-            };
+            Some(iter)
+        } else {
+            self.model
+                .model
+                .iter_nth_child(None, max(0, self.model.model.iter_n_children(None) - 1))
+        };
         if let Some(ref iter) = previous_iter {
             selection.select_iter(iter);
             self.play();
@@ -182,6 +188,7 @@ impl Playlist {
 
     fn stop(&mut self) {
         self.model.current_song = None;
+        self.model.player.stop();
     }
 
     fn remove_selection(&self) {
@@ -202,18 +209,17 @@ impl Playlist {
 
     fn play(&mut self) {
         if let Some(path) = self.selected_path() {
-            self.model.current_song = Some(path.into());
-            self.model.relm.stream().emit(
-                SongStarted(self.pixbuf())
-            );
+
+            self.model.player.play(path.clone());
+            self.model.current_song = Some(path.clone().into());
+            self.model.relm.stream().emit(SongStarted(self.pixbuf()));
         }
     }
 
     fn pixbuf(&self) -> Option<Pixbuf> {
         let selection = self.treeview.get_selection();
         if let Some((_, iter)) = selection.get_selected() {
-            let value = self.model.model.get_value(&iter,
-                PIXBUF_COLUMN as i32);
+            let value = self.model.model.get_value(&iter, PIXBUF_COLUMN as i32);
             return value.get::<Pixbuf>();
         }
         None
@@ -229,7 +235,8 @@ impl Playlist {
     }
 
     fn add(&self, path: &Path) {
-        let filename = path.file_stem()
+        let filename = path
+            .file_stem()
             .unwrap_or_default()
             .to_str()
             .unwrap_or_default();
@@ -237,7 +244,6 @@ impl Playlist {
         let row = self.model.model.append();
 
         if let Ok(tag) = Tag::read_from_path(path) {
-
             let title = match tag.get_vorbis("title") {
                 Some(t) => t.get(0).unwrap(),
                 None => filename,
@@ -274,57 +280,40 @@ impl Playlist {
 
             self.set_pixbuf(&row, &tag);
 
-            self.model.model.set_value(
-                &row, 
-                TITLE_COLUMN,
-                &title.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, TITLE_COLUMN, &title.to_value());
 
-            self.model.model.set_value(
-                &row,
-                ARTIST_COLUMN,
-                &artist.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, ARTIST_COLUMN, &artist.to_value());
 
-            self.model.model.set_value(
-                &row,
-                ALBUM_COLUMN,
-                &album.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, ALBUM_COLUMN, &album.to_value());
 
-            self.model.model.set_value(
-                &row,
-                GENRE_COLUMN,
-                &genre.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, GENRE_COLUMN, &genre.to_value());
 
-            self.model.model.set_value(
-                &row,
-                YEAR_COLUMN,
-                &year.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, YEAR_COLUMN, &year.to_value());
 
-            self.model.model.set_value(
-                &row,
-                TRACK_COLUMN,
-                &track_value.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, TRACK_COLUMN, &track_value.to_value());
         } else {
-            self.model.model.set_value(
-                &row,
-                TITLE_COLUMN,
-                &filename.to_value(),
-            );
+            self.model
+                .model
+                .set_value(&row, TITLE_COLUMN, &filename.to_value());
         }
 
-        let path = path.to_str()
-            .unwrap_or_default();
-        
-        self.model.model.set_value(
-            &row,
-            PATH_COLUMN,
-            &path.to_value(),
-        );
+        let path = path.to_str().unwrap_or_default();
+
+        self.model
+            .model
+            .set_value(&row, PATH_COLUMN, &path.to_value());
     }
 
     fn add_pixbuf_column(&self, column: i32, visibility: Visibility) {
@@ -364,9 +353,15 @@ impl Playlist {
             pixbuf_loader.set_size(IMAGE_SIZE, IMAGE_SIZE);
             pixbuf_loader.write(&picture.data).unwrap();
             if let Some(pixbuf) = pixbuf_loader.get_pixbuf() {
-                let thumbnail = pixbuf.scale_simple(THUMBNAIL_SIZE, THUMBNAIL_SIZE, INTERP_HYPER).unwrap();
-                self.model.model.set_value(row, THUMBNAIL_COLUMN, &thumbnail.to_value());
-                self.model.model.set_value(row, PIXBUF_COLUMN, &pixbuf.to_value());
+                let thumbnail = pixbuf
+                    .scale_simple(THUMBNAIL_SIZE, THUMBNAIL_SIZE, INTERP_HYPER)
+                    .unwrap();
+                self.model
+                    .model
+                    .set_value(row, THUMBNAIL_COLUMN, &thumbnail.to_value());
+                self.model
+                    .model
+                    .set_value(row, PIXBUF_COLUMN, &pixbuf.to_value());
             }
             pixbuf_loader.close().unwrap();
         }

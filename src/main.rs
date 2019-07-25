@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate text_io;
+#[macro_use]
+extern crate lazy_static;
 extern crate metaflac;
 extern crate rodio;
 extern crate walkdir;
@@ -11,52 +13,26 @@ extern crate relm;
 #[macro_use]
 extern crate relm_derive;
 
-use std::path::PathBuf;
-use relm::{Relm, Update, Widget};
 use gtk::{
-    Adjustment,
-    AdjustmentExt,
-    BoxExt,
-    ButtonsType,
-    DialogExt,
-    DialogFlags,
-    FileChooserAction,
-    FileChooserDialog,
-    FileChooserExt,
-    FileFilter,
-    GtkWindowExt,
-    Image,
-    ImageExt,
-    Inhibit,
-    LabelExt,
-    MessageDialog,
-    MessageType,
-    OrientableExt,
-    ScaleExt,
-    ToolButtonExt,
-    WidgetExt,
+    Adjustment, AdjustmentExt, BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
+    FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image, ImageExt, Inhibit,
+    LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
     Window,
 };
+use relm::{Relm, Update, Widget};
+use std::path::PathBuf;
 // use gtk::prelude::*;
-use gtk::Orientation::{Vertical, Horizontal};
+use gtk::Orientation::{Horizontal, Vertical};
 // use gtk::Image;
 // use gtk::{OrientableExt, ToolButtonExt};
 // use gtk::{GtkWindowExt, Inhibit, WidgetExt};
 use gdk_pixbuf::Pixbuf;
-use relm_derive::widget;
-use playlist::Playlist;
 use playlist::Msg::{
-    AddSong,
-    LoadSong,
-    NextSong,
-    PauseSong,
-    PlaySong,
-    PreviousSong,
-    RemoveSong,
-    SaveSong,
-    SongStarted,
-    StopSong,
+    AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
+    SongStarted, StopSong,
 };
+use playlist::Playlist;
+use relm_derive::widget;
 
 use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
@@ -73,7 +49,9 @@ use std::sync::mpsc;
 use std::thread;
 use walkdir::WalkDir;
 
+// mod player;
 mod playlist;
+mod player;
 
 // mod playlist;
 // mod song;
@@ -185,7 +163,6 @@ fn main() {
 //     Ok(songs)
 // }
 
-
 #[derive(Msg)]
 pub enum Msg {
     Open,
@@ -213,9 +190,7 @@ pub struct Model {
 impl Widget for Win {
     fn model() -> Model {
         Model {
-            adjustment: Adjustment::new(
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-            ),
+            adjustment: Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             cover_pixbuf: None,
             cover_visible: false,
             current_duration: 0,
@@ -231,15 +206,14 @@ impl Widget for Win {
             // attribute every time the model.counter attribute is updated.
             Msg::Open => self.open(),
             Msg::PlayPause => {
-
                 if self.model.stopped {
                     self.playlist.emit(PlaySong);
                 } else {
                     self.playlist.emit(PauseSong);
                     self.set_play_icon(PLAY_ICON);
+                    self.model.stopped = true;
                 }
-
-            },
+            }
             Msg::Previous => (),
             Msg::Stop => {
                 self.set_current_time(0);
@@ -247,7 +221,8 @@ impl Widget for Win {
                 self.playlist.emit(StopSong);
                 self.model.cover_visible = false;
                 self.set_play_icon(PLAY_ICON);
-            },
+                self.model.stopped = true;
+            }
             Msg::Next => (),
             Msg::Remove => (),
             Msg::Save => {
@@ -255,12 +230,13 @@ impl Widget for Win {
                 if let Some(file) = file {
                     self.playlist.emit(SaveSong(file));
                 }
-            },
+            }
             Msg::Started(pixbuf) => {
                 self.set_play_icon(PAUSE_ICON);
                 self.model.cover_visible = true;
                 self.model.cover_pixbuf = pixbuf;
-            },
+                self.model.stopped = false;
+            }
             Msg::Quit => gtk::main_quit(),
         }
     }
@@ -275,9 +251,9 @@ impl Widget for Win {
     }
 
     fn set_play_icon(&self, icon: &str) {
-        self.model.play_image.set_from_file(
-            format!("assets/{}.png", icon)
-        );
+        self.model
+            .play_image
+            .set_from_file(format!("assets/{}.png", icon));
     }
 
     view! {
@@ -365,18 +341,25 @@ impl Win {
     fn open(&self) {
         let file = show_open_dialog(&self.window);
         if let Some(file) = file {
-            let ext = file.extension().map(|ext| ext.to_str().unwrap().to_string());
+            let ext = file
+                .extension()
+                .map(|ext| ext.to_str().unwrap().to_string());
             if let Some(ext) = ext {
                 match ext.as_str() {
                     "flac" => self.playlist.emit(AddSong(file)),
                     "mp3" => (),
                     "m3u" => (),
                     extension => {
-                        let dialog = MessageDialog::new(Some(&self.window), DialogFlags::empty(), MessageType::Error,
-                        ButtonsType::Ok, &format!("Cannot open file with extension .{}", extension));
+                        let dialog = MessageDialog::new(
+                            Some(&self.window),
+                            DialogFlags::empty(),
+                            MessageType::Error,
+                            ButtonsType::Ok,
+                            &format!("Cannot open file with extension .{}", extension),
+                        );
                         dialog.run();
                         dialog.destroy();
-                    },
+                    }
                 }
             }
         }
@@ -391,14 +374,16 @@ fn millis_to_minutes(millis: u64) -> String {
 }
 
 fn new_icon(icon: &str) -> Image {
-    Image::new_from_file(
-        format!("./assets/{}.png", icon)
-    )
+    Image::new_from_file(format!("./assets/{}.png", icon))
 }
 
 fn show_open_dialog(parent: &Window) -> Option<PathBuf> {
     let mut file = None;
-    let dialog = FileChooserDialog::new(Some("Select a FLAC audio file"), Some(parent), FileChooserAction::Open);
+    let dialog = FileChooserDialog::new(
+        Some("Select a FLAC audio file"),
+        Some(parent),
+        FileChooserAction::Open,
+    );
 
     let flac_filter = FileFilter::new();
     flac_filter.add_mime_type("audio/flac");
@@ -422,7 +407,11 @@ fn show_open_dialog(parent: &Window) -> Option<PathBuf> {
 
 fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
     let mut file = None;
-    let dialog = FileChooserDialog::new(Some("Choose a destination M3U playlist file"), Some(parent), FileChooserAction::Save);
+    let dialog = FileChooserDialog::new(
+        Some("Choose a destination M3U playlist file"),
+        Some(parent),
+        FileChooserAction::Save,
+    );
     let filter = FileFilter::new();
     filter.add_mime_type("audio/x-mpegurl");
     filter.set_name("M3U playlist file");
