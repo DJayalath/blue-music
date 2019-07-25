@@ -44,16 +44,27 @@ use gtk::Orientation::{Vertical, Horizontal};
 // use gtk::{GtkWindowExt, Inhibit, WidgetExt};
 use gdk_pixbuf::Pixbuf;
 use relm_derive::widget;
+use playlist::Playlist;
+use playlist::Msg::{
+    AddSong,
+    LoadSong,
+    NextSong,
+    PauseSong,
+    PlaySong,
+    PreviousSong,
+    RemoveSong,
+    SaveSong,
+    SongStarted,
+    StopSong,
+};
 
 use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
 pub const PLAY_ICON: &str = "gtk-media-play";
-const RESPONSE_ACCEPT: i32 = GTK_RESPONSE_ACCEPT as i32;
-const RESPONSE_CANCEL: i32 = GTK_RESPONSE_CANCEL as i32;
 
-use playlist::Playlist;
+// use playlist::Playlist;
+// use song::Song;
 use rodio::Source;
-use song::Song;
 use std::env;
 use std::error::Error;
 use std::io::BufReader;
@@ -63,114 +74,116 @@ use std::thread;
 use walkdir::WalkDir;
 
 mod playlist;
-mod song;
+
+// mod playlist;
+// mod song;
 
 fn main() {
-    // TEMPORARY CMD-LINE ARGS BEFORE GUI
-    // Read cmd-line arguments and check errors
-    let args: Vec<String> = env::args().collect();
-    if args.len() <= 2 {
-        eprintln!("ERROR: Too few args");
-        process::exit(1);
-    }
-    let dir = WalkDir::new(&args[1]);
-    let valid_exts = args[2].split(',').collect::<Vec<&str>>();
+    // // TEMPORARY CMD-LINE ARGS BEFORE GUI
+    // // Read cmd-line arguments and check errors
+    // let args: Vec<String> = env::args().collect();
+    // if args.len() <= 2 {
+    //     eprintln!("ERROR: Too few args");
+    //     process::exit(1);
+    // }
+    // let dir = WalkDir::new(&args[1]);
+    // let valid_exts = args[2].split(',').collect::<Vec<&str>>();
 
-    // Create playlist from songs located in directory root
-    let songs = find_music(dir, &valid_exts).unwrap();
-    let mut playlist = Playlist::new(songs);
+    // // Create playlist from songs located in directory root
+    // let songs = find_music(dir, &valid_exts).unwrap();
+    // let mut playlist = Playlist::new(songs);
 
     Win::run(()).unwrap();
 
-    // Thread send/receive channels to communicate cmd-line
-    // commands to control playlist
-    let (tx, rx) = mpsc::channel();
+    // // Thread send/receive channels to communicate cmd-line
+    // // commands to control playlist
+    // let (tx, rx) = mpsc::channel();
 
-    playlist.random_shuffle();
+    // playlist.random_shuffle();
 
-    // Cmd-line command collection thread
-    thread::spawn(move || loop {
-        let cmd: String = read!();
-        tx.send(cmd).unwrap();
-    });
+    // // Cmd-line command collection thread
+    // thread::spawn(move || loop {
+    //     let cmd: String = read!();
+    //     tx.send(cmd).unwrap();
+    // });
 
-    // Playlist runs on main thread
-    loop {
-        playlist.update();
+    // // Playlist runs on main thread
+    // loop {
+    //     playlist.update();
 
-        // Ensure main thread doesn't wait for new
-        // commands if none are provided
-        if let Ok(c) = &rx.try_recv() {
-            match &c[..] {
-                "skip" => playlist.play_next(),
-                "shuffle" => playlist.random_shuffle(),
-                "genre-shuffle" => playlist.genre_shuffle(),
-                _ => (),
-            }
-        }
-    }
+    //     // Ensure main thread doesn't wait for new
+    //     // commands if none are provided
+    //     if let Ok(c) = &rx.try_recv() {
+    //         match &c[..] {
+    //             "skip" => playlist.play_next(),
+    //             "shuffle" => playlist.random_shuffle(),
+    //             "genre-shuffle" => playlist.genre_shuffle(),
+    //             _ => (),
+    //         }
+    //     }
+    // }
 }
 
-fn find_music(path: WalkDir, valid_exts: &[&str]) -> Result<Vec<Song>, Box<dyn Error>> {
-    let mut songs: Vec<Song> = Vec::new();
-    for entry in path {
-        let entry = entry?;
-        let loc = entry.clone();
-        let entry = entry.path();
+// fn find_music(path: WalkDir, valid_exts: &[&str]) -> Result<Vec<Song>, Box<dyn Error>> {
+//     let mut songs: Vec<Song> = Vec::new();
+//     for entry in path {
+//         let entry = entry?;
+//         let loc = entry.clone();
+//         let entry = entry.path();
 
-        // Check extension exists!
-        if let Some(extension) = entry.extension() {
-            // Make certain it is an extension that can be played
-            if valid_exts.contains(&extension.to_str().unwrap()) {
-                // Find relevant Song attributes
-                let file = std::fs::File::open(entry)?;
-                let reader = BufReader::new(file);
-                let source = rodio::Decoder::new(reader)?;
-                let duration = source.total_duration().unwrap();
-                let mut title = String::new();
-                let mut artist = String::new();
-                let mut genre: Vec<String> = Vec::new();
+//         // Check extension exists!
+//         if let Some(extension) = entry.extension() {
+//             // Make certain it is an extension that can be played
+//             if valid_exts.contains(&extension.to_str().unwrap()) {
+//                 // Find relevant Song attributes
+//                 let file = std::fs::File::open(entry)?;
+//                 let reader = BufReader::new(file);
+//                 let source = rodio::Decoder::new(reader)?;
+//                 let duration = source.total_duration().unwrap();
+//                 let mut title = String::new();
+//                 let mut artist = String::new();
+//                 let mut genre: Vec<String> = Vec::new();
 
-                match metaflac::Tag::read_from_path(entry) {
-                    Ok(tag) => {
-                        // The genre tag requires more work by splitting strings
-                        // using certain characters because genre tagging is
-                        // inconsistent. Some tags are written as a single string
-                        // with delimiters. Others are done properly as separate
-                        // strings in vorbis.
-                        if let Some(g) = tag.get_vorbis("genre") {
-                            for genre_field in g {
-                                // Note this is not ideal because the standard tag 'Hip Hop', if
-                                // tagged as 'Hip-Hop' is split into 'Hip' and 'Hop'
-                                for genre_type in genre_field.split(&[',', '/', '\\', ';', '-'][..])
-                                {
-                                    genre.push(genre_type.to_string());
-                                }
-                            }
-                        }
+//                 match metaflac::Tag::read_from_path(entry) {
+//                     Ok(tag) => {
+//                         // The genre tag requires more work by splitting strings
+//                         // using certain characters because genre tagging is
+//                         // inconsistent. Some tags are written as a single string
+//                         // with delimiters. Others are done properly as separate
+//                         // strings in vorbis.
+//                         if let Some(g) = tag.get_vorbis("genre") {
+//                             for genre_field in g {
+//                                 // Note this is not ideal because the standard tag 'Hip Hop', if
+//                                 // tagged as 'Hip-Hop' is split into 'Hip' and 'Hop'
+//                                 for genre_type in genre_field.split(&[',', '/', '\\', ';', '-'][..])
+//                                 {
+//                                     genre.push(genre_type.to_string());
+//                                 }
+//                             }
+//                         }
 
-                        // Title and artist tags are just one string so
-                        // only the first index of the vector is needed
+//                         // Title and artist tags are just one string so
+//                         // only the first index of the vector is needed
 
-                        if let Some(t) = tag.get_vorbis("title") {
-                            title = t[0].clone();
-                        }
+//                         if let Some(t) = tag.get_vorbis("title") {
+//                             title = t[0].clone();
+//                         }
 
-                        if let Some(a) = tag.get_vorbis("artist") {
-                            artist = a[0].clone();
-                        }
+//                         if let Some(a) = tag.get_vorbis("artist") {
+//                             artist = a[0].clone();
+//                         }
 
-                        songs.push(Song::new(loc, title, artist, genre, duration));
-                    }
+//                         songs.push(Song::new(loc, title, artist, genre, duration));
+//                     }
 
-                    Err(e) => panic!("{}", e),
-                }
-            }
-        }
-    }
+//                     Err(e) => panic!("{}", e),
+//                 }
+//             }
+//         }
+//     }
 
-    Ok(songs)
-}
+//     Ok(songs)
+// }
 
 
 #[derive(Msg)]
@@ -182,6 +195,7 @@ pub enum Msg {
     Next,
     Remove,
     Save,
+    Started(Option<Pixbuf>),
     Quit,
 }
 
@@ -217,20 +231,36 @@ impl Widget for Win {
             // attribute every time the model.counter attribute is updated.
             Msg::Open => self.open(),
             Msg::PlayPause => {
-                if !self.model.stopped {
+
+                if self.model.stopped {
+                    self.playlist.emit(PlaySong);
+                } else {
+                    self.playlist.emit(PauseSong);
                     self.set_play_icon(PLAY_ICON);
                 }
+
             },
             Msg::Previous => (),
             Msg::Stop => {
                 self.set_current_time(0);
                 self.model.current_duration = 0;
+                self.playlist.emit(StopSong);
                 self.model.cover_visible = false;
                 self.set_play_icon(PLAY_ICON);
             },
             Msg::Next => (),
             Msg::Remove => (),
-            Msg::Save => {show_save_dialog(&self.window).unwrap();},
+            Msg::Save => {
+                let file = show_save_dialog(&self.window);
+                if let Some(file) = file {
+                    self.playlist.emit(SaveSong(file));
+                }
+            },
+            Msg::Started(pixbuf) => {
+                self.set_play_icon(PAUSE_ICON);
+                self.model.cover_visible = true;
+                self.model.cover_pixbuf = pixbuf;
+            },
             Msg::Quit => gtk::main_quit(),
         }
     }
@@ -270,7 +300,7 @@ impl Widget for Win {
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("gtk-media-previous"),
-                        clicked => Msg::Previous,
+                        clicked => playlist@PreviousSong,
                     },
                     gtk::ToolButton {
                         icon_widget: &self.model.play_image,
@@ -282,13 +312,13 @@ impl Widget for Win {
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("gtk-media-next"),
-                        clicked => Msg::Next,
+                        clicked => playlist@NextSong,
                     },
                     gtk::SeparatorToolItem {
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("remove"),
-                        clicked => Msg::Remove,
+                        clicked => playlist@RemoveSong,
                     },
                     gtk::SeparatorToolItem {
                     },
@@ -296,6 +326,10 @@ impl Widget for Win {
                         icon_widget: &new_icon("gtk-quit"),
                         clicked => Msg::Quit,
                     },
+                },
+                #[name="playlist"]
+                Playlist {
+                    SongStarted(ref pixbuf) => Msg::Started(pixbuf.clone()),
                 },
                 gtk::Image {
                     from_pixbuf: self.model.cover_pixbuf.as_ref(),
@@ -329,23 +363,24 @@ impl Widget for Win {
 
 impl Win {
     fn open(&self) {
-    let file = show_open_dialog(&self.window);
-    if let Some(file) = file {
-        let ext = file.extension().map(|ext| ext.to_str().unwrap().to_string());
-        if let Some(ext) = ext {
-            match ext.as_str() {
-                "mp3" => (),
-                "m3u" => (),
-                extension => {
-                    let dialog = MessageDialog::new(Some(&self.window), DialogFlags::empty(), MessageType::Error,
-                    ButtonsType::Ok, &format!("Cannot open file with extension .{}", extension));
-                    dialog.run();
-                    dialog.destroy();
-                },
+        let file = show_open_dialog(&self.window);
+        if let Some(file) = file {
+            let ext = file.extension().map(|ext| ext.to_str().unwrap().to_string());
+            if let Some(ext) = ext {
+                match ext.as_str() {
+                    "flac" => self.playlist.emit(AddSong(file)),
+                    "mp3" => (),
+                    "m3u" => (),
+                    extension => {
+                        let dialog = MessageDialog::new(Some(&self.window), DialogFlags::empty(), MessageType::Error,
+                        ButtonsType::Ok, &format!("Cannot open file with extension .{}", extension));
+                        dialog.run();
+                        dialog.destroy();
+                    },
+                }
             }
         }
     }
-}
 }
 
 fn millis_to_minutes(millis: u64) -> String {
@@ -363,12 +398,12 @@ fn new_icon(icon: &str) -> Image {
 
 fn show_open_dialog(parent: &Window) -> Option<PathBuf> {
     let mut file = None;
-    let dialog = FileChooserDialog::new(Some("Select an MP3 audio file"), Some(parent), FileChooserAction::Open);
+    let dialog = FileChooserDialog::new(Some("Select a FLAC audio file"), Some(parent), FileChooserAction::Open);
 
-    let mp3_filter = FileFilter::new();
-    mp3_filter.add_mime_type("audio/mp3");
-    mp3_filter.set_name("MP3 audio file");
-    dialog.add_filter(&mp3_filter);
+    let flac_filter = FileFilter::new();
+    flac_filter.add_mime_type("audio/flac");
+    flac_filter.set_name("FLAC audio file");
+    dialog.add_filter(&flac_filter);
 
     let m3u_filter = FileFilter::new();
     m3u_filter.add_mime_type("audio/x-mpegurl");
@@ -378,7 +413,7 @@ fn show_open_dialog(parent: &Window) -> Option<PathBuf> {
     dialog.add_button("Cancel", gtk::ResponseType::Cancel);
     dialog.add_button("Accept", gtk::ResponseType::Accept);
     let result = dialog.run();
-    if result == RESPONSE_ACCEPT {
+    if result == GTK_RESPONSE_ACCEPT {
         file = dialog.get_filename();
     }
     dialog.destroy();
@@ -396,7 +431,7 @@ fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
     dialog.add_button("Cancel", gtk::ResponseType::Cancel);
     dialog.add_button("Save", gtk::ResponseType::Accept);
     let result = dialog.run();
-    if result == RESPONSE_ACCEPT {
+    if result == GTK_RESPONSE_ACCEPT {
         file = dialog.get_filename();
     }
     dialog.destroy();

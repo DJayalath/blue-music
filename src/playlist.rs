@@ -1,101 +1,374 @@
-use super::Song;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
-use rodio::{Device, Sink};
-use std::time::SystemTime;
+use relm::Widget;
+use gtk;
+use gtk::{TreeViewExt,
+            WidgetExt,
+            CellLayoutExt,
+            CellRendererPixbuf,
+            CellRendererText,
+            TreeViewColumn,
+            TreeViewColumnExt,
+            ListStore,
+            GtkListStoreExt,
+            GtkListStoreExtManual,
+            ToValue,
+            TreeIter,
+            TreeModelExt,
+            TreeSelectionExt,
+        };
+use relm_derive::widget;
+use gdk_pixbuf::{Pixbuf,
+                PixbufLoader,
+                PixbufLoaderExt,
+                InterpType,
+                };
+use gtk::{StaticType, Type};
+use relm::Relm;
+use std::path::Path;
+use std::path::PathBuf;
+use metaflac::Tag;
+use m3u;
+use std::fs::File;
+use std::cmp::max;
 
-pub struct Playlist {
-    songs: Vec<Song>,
-    device: Device,
-    sink: Sink,
-    start: SystemTime,
+use self::Msg::*;
+use self::Visibility::*;
+
+#[derive(PartialEq)]
+enum Visibility {
+    Invisible,
+    Visible,
+}
+
+const INTERP_HYPER: InterpType = InterpType::Hyper;
+const IMAGE_SIZE: i32 = 256;
+const THUMBNAIL_SIZE: i32 = 64;
+
+const THUMBNAIL_COLUMN: u32 = 0;
+const TITLE_COLUMN: u32 = 1;
+const ARTIST_COLUMN: u32 = 2;
+const ALBUM_COLUMN: u32 = 3;
+const GENRE_COLUMN: u32 = 4;
+const YEAR_COLUMN: u32 = 5;
+const TRACK_COLUMN: u32 = 6;
+const PATH_COLUMN: u32 = 7;
+const PIXBUF_COLUMN: u32 = 8;
+
+#[derive(Msg)]
+pub enum Msg {
+    AddSong(PathBuf),
+    LoadSong(PathBuf),
+    NextSong,
+    PauseSong,
+    PlaySong,
+    PreviousSong,
+    RemoveSong,
+    SaveSong(PathBuf),
+    SongStarted(Option<Pixbuf>),
+    StopSong,
+}
+
+pub struct Model {
+    current_song: Option<String>,
+    model: ListStore,
+    relm: Relm<Playlist>
+}
+
+#[widget]
+impl Widget for Playlist {
+    fn model(relm: &Relm<Self>, _: ()) -> Model {
+        Model {
+            current_song: None,
+            model: ListStore::new(&[
+                Pixbuf::static_type(),
+                Type::String,
+                Type::String,
+                Type::String,
+                Type::String,
+                Type::String,
+                Type::String,
+                Type::String,
+                Pixbuf::static_type(),
+            ]),
+            relm: relm.clone(),
+        }
+    }
+
+    fn update(&mut self, event: Msg) {
+        match event {
+            AddSong(path) => self.add(&path),
+            LoadSong(path) => self.load(&path),
+            NextSong => self.next(),
+            PauseSong => (),
+            PlaySong => self.play(),
+            PreviousSong => self.previous(),
+            RemoveSong => self.remove_selection(),
+            SaveSong(path) => self.save(&path),
+
+            // Listened by Win
+            SongStarted(_) => (),
+            StopSong => self.stop(),
+        }
+    }
+
+    fn init_view(&mut self) {
+        self.create_columns();
+    }
+
+    view! {
+        #[name="treeview"]
+        gtk::TreeView {
+            hexpand: true,
+            model: &self.model.model,
+            vexpand: true,
+        }
+    }
 }
 
 impl Playlist {
-    pub fn new(songs: Vec<Song>) -> Self {
-        let device = rodio::default_output_device().unwrap();
-        let sink = rodio::Sink::new(&device);
-        let start = SystemTime::now();
-        Playlist {
-            songs,
-            device,
-            sink,
-            start,
-        }
-    }
 
-    pub fn play_next(&mut self) {
-        self.songs.remove(0); // FIX skipping first song
-        self.stop_sink();
-        self.songs[0].play(&self.sink).unwrap();
-        self.reset_time();
-    }
-
-    pub fn random_shuffle(&mut self) {
-        self.stop_sink();
-        self.songs.shuffle(&mut thread_rng());
-        self.play_next();
-    }
-
-    // A function that shuffles non-randomly to try and chain songs
-    // with the most matching genres
-    pub fn genre_shuffle(&mut self) {
-        self.stop_sink();
-
-        // Loop over every song currently after now playing
-        for k in 1..self.songs.len() {
-            // Track the index of the song with the most
-            // genre matches to the song being analysed
-            let mut best_score = 0;
-            let mut best_i = k;
-
-            for i in k..self.songs.len() {
-                let mut score = 0;
-                for genre in &self.songs[k - 1].genre {
-                    if self.songs[i].genre.contains(&genre) {
-                        score += 1;
-                    }
+    fn next(&mut self) {
+        let selection = self.treeview.get_selection();
+        let next_iter =
+            if let Some((_, iter)) = selection.get_selected() {
+                if !self.model.model.iter_next(&iter) {
+                    return;
                 }
-
-                if score > best_score {
-                    best_score = score;
-                    best_i = i;
-                }
+                Some(iter)
             }
-
-            // Insert the most similar song into the spot
-            // after the song currently being analysed
-            let temp = self.songs.remove(best_i);
-            self.songs.insert(k, temp);
-        }
-
-        self.play_next();
-    }
-
-    pub fn update(&mut self) {
-        if self.is_song_finished() {
-            self.play_next();
+            else {
+                self.model.model.get_iter_first()
+            };
+        if let Some(ref iter) = next_iter {
+            selection.select_iter(iter);
+            self.play();
         }
     }
 
-    fn reset_time(&mut self) {
-        self.start = SystemTime::now();
+    fn previous(&mut self) {
+        let selection = self.treeview.get_selection();
+        let previous_iter =
+            if let Some((_, iter)) = selection.get_selected() {
+                if !self.model.model.iter_previous(&iter) {
+                    return;
+                }
+                Some(iter)
+            }
+            else {
+                self.model.model.iter_nth_child(None, max(0, self.model.model.iter_n_children(None) - 1))
+            };
+        if let Some(ref iter) = previous_iter {
+            selection.select_iter(iter);
+            self.play();
+        }
     }
 
-    // Check if enough time has passed that the
-    // playing song has finished
-    fn is_song_finished(&self) -> bool {
-        let now = SystemTime::now();
-        if now.duration_since(self.start).unwrap().as_millis() > self.songs[0].duration.as_millis()
-        {
-            return true;
+    fn save(&self, path: &Path) {
+        let mut file = File::create(path).unwrap();
+        let mut writer = m3u::Writer::new(&mut file);
+
+        let mut write_iter = |iter: &TreeIter| {
+            let value = self.model.model.get_value(&iter, PATH_COLUMN as i32);
+            let path = value.get::<String>().unwrap();
+            writer.write_entry(&m3u::path_entry(path)).unwrap();
+        };
+
+        if let Some(iter) = self.model.model.get_iter_first() {
+            write_iter(&iter);
+            while self.model.model.iter_next(&iter) {
+                write_iter(&iter);
+            }
+        }
+    }
+
+    fn stop(&mut self) {
+        self.model.current_song = None;
+    }
+
+    fn remove_selection(&self) {
+        let selection = self.treeview.get_selection();
+        if let Some((_, iter)) = selection.get_selected() {
+            self.model.model.remove(&iter);
+        }
+    }
+
+    fn load(&self, path: &Path) {
+        let mut reader = m3u::Reader::open(path).unwrap();
+        for entry in reader.entries() {
+            if let Ok(m3u::Entry::Path(path)) = entry {
+                self.add(&path);
+            }
+        }
+    }
+
+    fn play(&mut self) {
+        if let Some(path) = self.selected_path() {
+            self.model.current_song = Some(path.into());
+            self.model.relm.stream().emit(
+                SongStarted(self.pixbuf())
+            );
+        }
+    }
+
+    fn pixbuf(&self) -> Option<Pixbuf> {
+        let selection = self.treeview.get_selection();
+        if let Some((_, iter)) = selection.get_selected() {
+            let value = self.model.model.get_value(&iter,
+                PIXBUF_COLUMN as i32);
+            return value.get::<Pixbuf>();
+        }
+        None
+    }
+
+    fn selected_path(&self) -> Option<String> {
+        let selection = self.treeview.get_selection();
+        if let Some((_, iter)) = selection.get_selected() {
+            let value = self.model.model.get_value(&iter, PATH_COLUMN as i32);
+            return value.get::<String>();
+        }
+        None
+    }
+
+    fn add(&self, path: &Path) {
+        let filename = path.file_stem()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or_default();
+
+        let row = self.model.model.append();
+
+        if let Ok(tag) = Tag::read_from_path(path) {
+
+            let title = match tag.get_vorbis("title") {
+                Some(t) => t.get(0).unwrap(),
+                None => filename,
+            };
+
+            let artist = match tag.get_vorbis("artist") {
+                Some(t) => t.get(0).unwrap(),
+                None => "Unknown",
+            };
+
+            let album = match tag.get_vorbis("album") {
+                Some(t) => t.get(0).unwrap(),
+                None => "Unknown",
+            };
+
+            let genre = match tag.get_vorbis("genre") {
+                Some(t) => t.get(0).unwrap(),
+                None => "Unknown",
+            };
+
+            let year = match tag.get_vorbis("year") {
+                Some(t) => t.get(0).unwrap(),
+                None => "Unknown",
+            };
+
+            let track = match tag.get_vorbis("tracknumber") {
+                Some(t) => t.get(0).unwrap(),
+                None => "Unknown",
+            };
+
+            let total_tracks = "??";
+
+            let track_value = format!("{} / {}", track, total_tracks);
+
+            self.set_pixbuf(&row, &tag);
+
+            self.model.model.set_value(
+                &row, 
+                TITLE_COLUMN,
+                &title.to_value(),
+            );
+
+            self.model.model.set_value(
+                &row,
+                ARTIST_COLUMN,
+                &artist.to_value(),
+            );
+
+            self.model.model.set_value(
+                &row,
+                ALBUM_COLUMN,
+                &album.to_value(),
+            );
+
+            self.model.model.set_value(
+                &row,
+                GENRE_COLUMN,
+                &genre.to_value(),
+            );
+
+            self.model.model.set_value(
+                &row,
+                YEAR_COLUMN,
+                &year.to_value(),
+            );
+
+            self.model.model.set_value(
+                &row,
+                TRACK_COLUMN,
+                &track_value.to_value(),
+            );
+        } else {
+            self.model.model.set_value(
+                &row,
+                TITLE_COLUMN,
+                &filename.to_value(),
+            );
         }
 
-        false
+        let path = path.to_str()
+            .unwrap_or_default();
+        
+        self.model.model.set_value(
+            &row,
+            PATH_COLUMN,
+            &path.to_value(),
+        );
     }
 
-    fn stop_sink(&mut self) {
-        self.sink.stop();
-        self.sink = rodio::Sink::new(&self.device);
+    fn add_pixbuf_column(&self, column: i32, visibility: Visibility) {
+        let view_column = TreeViewColumn::new();
+        if visibility == Visible {
+            let cell = CellRendererPixbuf::new();
+            view_column.pack_start(&cell, true);
+            view_column.add_attribute(&cell, "pixbuf", column);
+        }
+    }
+
+    fn add_text_column(&self, title: &str, column: i32) {
+        let view_column = TreeViewColumn::new();
+        view_column.set_title(title);
+        let cell = CellRendererText::new();
+        view_column.set_expand(true);
+        view_column.pack_start(&cell, true);
+        view_column.add_attribute(&cell, "text", column);
+        self.treeview.append_column(&view_column);
+    }
+
+    fn create_columns(&self) {
+        self.add_pixbuf_column(THUMBNAIL_COLUMN as i32, Visible);
+        self.add_text_column("Title", TITLE_COLUMN as i32);
+        self.add_text_column("Artist", ARTIST_COLUMN as i32);
+        self.add_text_column("Album", ALBUM_COLUMN as i32);
+        self.add_text_column("Genre", GENRE_COLUMN as i32);
+        self.add_text_column("Year", YEAR_COLUMN as i32);
+        self.add_text_column("Track", TRACK_COLUMN as i32);
+        self.add_pixbuf_column(PIXBUF_COLUMN as i32, Invisible);
+    }
+
+    fn set_pixbuf(&self, row: &TreeIter, tag: &Tag) {
+        println!("{}", tag.pictures().len());
+        if let Some(picture) = tag.pictures().get(0) {
+            let pixbuf_loader = PixbufLoader::new();
+            pixbuf_loader.set_size(IMAGE_SIZE, IMAGE_SIZE);
+            pixbuf_loader.write(&picture.data).unwrap();
+            if let Some(pixbuf) = pixbuf_loader.get_pixbuf() {
+                let thumbnail = pixbuf.scale_simple(THUMBNAIL_SIZE, THUMBNAIL_SIZE, INTERP_HYPER).unwrap();
+                self.model.model.set_value(row, THUMBNAIL_COLUMN, &thumbnail.to_value());
+                self.model.model.set_value(row, PIXBUF_COLUMN, &pixbuf.to_value());
+            }
+            pixbuf_loader.close().unwrap();
+        }
     }
 }
