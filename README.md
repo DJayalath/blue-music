@@ -1,11 +1,20 @@
 # blue-music
-A mood focused music player
+A free and open music player written in Rust
+
+## Testing Instructions
+### Linux
+1. Extract the archive
+2. Navigate to 'blue-music' directory
+3. Make sure you own the binary file: `$ chmod +x blue-music`
+4. Execute: `$ ./blue-music`
+### Windows
+1. Double-click
 
 ## Goals
 - A decent desktop music player
 - Smoother transitions between songs (closest moods, genres, volume, etc.)
 
-## Done
+## Complete
 - CMD-line shuffling and playing
 - Genre-scored shuffling by hill climb
 
