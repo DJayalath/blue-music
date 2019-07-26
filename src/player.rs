@@ -1,11 +1,8 @@
 use lazy_static;
 use rodio::Sink;
 use rodio::Source;
-use std::cmp::max;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
@@ -13,8 +10,14 @@ lazy_static! {
     static ref DEVICE: rodio::Device = rodio::default_output_device().unwrap();
 }
 
+enum PlayerState {
+    Stop,
+    Pause,
+    Unpause,
+}
+
 pub struct Player {
-    tx: Option<mpsc::Sender<String>>,
+    tx: Option<mpsc::Sender<PlayerState>>,
     stopped: bool,
     paused: bool,
     pub duration: u128,
@@ -31,18 +34,18 @@ impl Player {
     }
 
     pub fn pause(&mut self) {
-        if !self.paused {
-            if let Some(t) = &self.tx {
-                t.send("pause".to_string()).unwrap();
+        if let Some(t) = &self.tx {
+            if let Err(e) = t.send(PlayerState::Pause) {
+                println!("WARN: Attempted to pause non-existant playing thread!\n{}", e);
             }
-            self.paused = true;
         }
+        self.paused = true;
     }
 
     pub fn stop(&mut self) {
-        if !self.stopped {
-            if let Some(t) = &self.tx {
-                t.send("stop".to_string()).unwrap();
+        if let Some(t) = &self.tx {
+            if let Err(e) = t.send(PlayerState::Stop) {
+                println!("WARN: Attempted to stop non-existant playing thread!\n{}", e);
             }
         }
         self.stopped = true;
@@ -62,11 +65,10 @@ impl Player {
                 sink.append(source);
                 loop {
                     if let Ok(c) = rx.try_recv() {
-                        match &c[..] {
-                            "stop" => break,
-                            "pause" => sink.pause(),
-                            "unpause" => sink.play(),
-                            _ => (),
+                        match c {
+                            PlayerState::Stop => break,
+                            PlayerState::Pause => sink.pause(),
+                            PlayerState::Unpause => sink.play(),
                         }
                     }
                 }
@@ -76,7 +78,9 @@ impl Player {
             });
         } else {
             if let Some(t) = &self.tx {
-                t.send("unpause".to_string()).unwrap_or_default();
+                if let Err(e) = t.send(PlayerState::Unpause) {
+                    println!("WARN: Attempted to unpause non-existant playing thread!\n{}", e);
+                }
             }
             self.paused = false;
         }

@@ -48,7 +48,6 @@ pub enum Msg {
     SaveSong(PathBuf),
     SongStarted(Option<Pixbuf>),
     StopSong,
-    UpdateTime(u128),
 }
 
 pub struct Model {
@@ -88,7 +87,6 @@ impl Widget for Playlist {
     fn update(&mut self, event: Msg) {
         match event {
             SongDuration(_) => (),
-            UpdateTime(_) => (),
             AddSong(path) => self.add(&path),
             LoadSong(path) => self.load(&path),
             NextSong => self.next(),
@@ -123,6 +121,7 @@ impl Widget for Playlist {
 }
 
 impl Playlist {
+
     fn pause(&mut self) {
         self.model.player.pause();
     }
@@ -139,6 +138,7 @@ impl Playlist {
         };
         if let Some(ref iter) = next_iter {
             selection.select_iter(iter);
+            self.stop();
             self.play();
         }
     }
@@ -157,6 +157,7 @@ impl Playlist {
         };
         if let Some(ref iter) = previous_iter {
             selection.select_iter(iter);
+            self.stop();
             self.play();
         }
     }

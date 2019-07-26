@@ -1,11 +1,7 @@
 #[macro_use]
-extern crate text_io;
-#[macro_use]
 extern crate lazy_static;
 extern crate metaflac;
 extern crate rodio;
-extern crate walkdir;
-
 extern crate gdk_pixbuf;
 extern crate gtk;
 #[macro_use]
@@ -21,15 +17,11 @@ use gtk::{
 };
 use relm::{interval, Relm, Update, Widget};
 use std::path::PathBuf;
-// use gtk::prelude::*;
 use gtk::Orientation::{Horizontal, Vertical};
-// use gtk::Image;
-// use gtk::{OrientableExt, ToolButtonExt};
-// use gtk::{GtkWindowExt, Inhibit, WidgetExt};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
     AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongDuration, SongStarted, StopSong, UpdateTime,
+    SongDuration, SongStarted, StopSong,
 };
 use playlist::Playlist;
 use relm_derive::widget;
@@ -38,131 +30,14 @@ use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
 pub const PLAY_ICON: &str = "gtk-media-play";
 
-// use playlist::Playlist;
-// use song::Song;
-use rodio::Source;
-use std::env;
-use std::error::Error;
-use std::io::BufReader;
-use std::process;
-use std::sync::mpsc;
-use std::thread;
-use std::time::SystemTime;
-use walkdir::WalkDir;
-
-// mod player;
 mod player;
 mod playlist;
 
-// mod playlist;
-// mod song;
-
 fn main() {
-    // // TEMPORARY CMD-LINE ARGS BEFORE GUI
-    // // Read cmd-line arguments and check errors
-    // let args: Vec<String> = env::args().collect();
-    // if args.len() <= 2 {
-    //     eprintln!("ERROR: Too few args");
-    //     process::exit(1);
-    // }
-    // let dir = WalkDir::new(&args[1]);
-    // let valid_exts = args[2].split(',').collect::<Vec<&str>>();
-
-    // // Create playlist from songs located in directory root
-    // let songs = find_music(dir, &valid_exts).unwrap();
-    // let mut playlist = Playlist::new(songs);
 
     Win::run(()).unwrap();
 
-    // // Thread send/receive channels to communicate cmd-line
-    // // commands to control playlist
-    // let (tx, rx) = mpsc::channel();
-
-    // playlist.random_shuffle();
-
-    // // Cmd-line command collection thread
-    // thread::spawn(move || loop {
-    //     let cmd: String = read!();
-    //     tx.send(cmd).unwrap();
-    // });
-
-    // // Playlist runs on main thread
-    // loop {
-    //     playlist.update();
-
-    //     // Ensure main thread doesn't wait for new
-    //     // commands if none are provided
-    //     if let Ok(c) = &rx.try_recv() {
-    //         match &c[..] {
-    //             "skip" => playlist.play_next(),
-    //             "shuffle" => playlist.random_shuffle(),
-    //             "genre-shuffle" => playlist.genre_shuffle(),
-    //             _ => (),
-    //         }
-    //     }
-    // }
 }
-
-// fn find_music(path: WalkDir, valid_exts: &[&str]) -> Result<Vec<Song>, Box<dyn Error>> {
-//     let mut songs: Vec<Song> = Vec::new();
-//     for entry in path {
-//         let entry = entry?;
-//         let loc = entry.clone();
-//         let entry = entry.path();
-
-//         // Check extension exists!
-//         if let Some(extension) = entry.extension() {
-//             // Make certain it is an extension that can be played
-//             if valid_exts.contains(&extension.to_str().unwrap()) {
-//                 // Find relevant Song attributes
-//                 let file = std::fs::File::open(entry)?;
-//                 let reader = BufReader::new(file);
-//                 let source = rodio::Decoder::new(reader)?;
-//                 let duration = source.total_duration().unwrap();
-//                 let mut title = String::new();
-//                 let mut artist = String::new();
-//                 let mut genre: Vec<String> = Vec::new();
-
-//                 match metaflac::Tag::read_from_path(entry) {
-//                     Ok(tag) => {
-//                         // The genre tag requires more work by splitting strings
-//                         // using certain characters because genre tagging is
-//                         // inconsistent. Some tags are written as a single string
-//                         // with delimiters. Others are done properly as separate
-//                         // strings in vorbis.
-//                         if let Some(g) = tag.get_vorbis("genre") {
-//                             for genre_field in g {
-//                                 // Note this is not ideal because the standard tag 'Hip Hop', if
-//                                 // tagged as 'Hip-Hop' is split into 'Hip' and 'Hop'
-//                                 for genre_type in genre_field.split(&[',', '/', '\\', ';', '-'][..])
-//                                 {
-//                                     genre.push(genre_type.to_string());
-//                                 }
-//                             }
-//                         }
-
-//                         // Title and artist tags are just one string so
-//                         // only the first index of the vector is needed
-
-//                         if let Some(t) = tag.get_vorbis("title") {
-//                             title = t[0].clone();
-//                         }
-
-//                         if let Some(a) = tag.get_vorbis("artist") {
-//                             artist = a[0].clone();
-//                         }
-
-//                         songs.push(Song::new(loc, title, artist, genre, duration));
-//                     }
-
-//                     Err(e) => panic!("{}", e),
-//                 }
-//             }
-//         }
-//     }
-
-//     Ok(songs)
-// }
 
 #[derive(Msg)]
 pub enum Msg {
@@ -175,7 +50,6 @@ pub enum Msg {
     Save,
     Started(Option<Pixbuf>),
     Quit,
-    Update(u128),
     Duration(u128),
     Tick,
 }
@@ -219,18 +93,10 @@ impl Widget for Win {
                         .set_text(&format!("{}", millis_to_minutes(self.model.current_time)));
 
                     if self.model.current_time > self.model.current_duration {
-                        self.set_current_time(0);
-                        self.model.current_duration = 0;
-                        self.playlist.emit(StopSong);
-                        self.model.cover_visible = false;
-                        self.set_play_icon(PLAY_ICON);
-                        self.model.stopped = true;
-                        self.model.paused = false;
+                        self.stop();
                     }
                 }
-            }
-            // A call to self.label1.set_text() is automatically inserted by the
-            // attribute every time the model.counter attribute is updated.
+            },
             Msg::Open => self.open(),
             Msg::PlayPause => {
                 if self.model.stopped {
@@ -243,18 +109,9 @@ impl Widget for Win {
                     self.set_play_icon(PLAY_ICON);
                     self.model.stopped = true;
                 }
-            }
-            Msg::Update(t) => self.set_current_time(t),
+            },
             Msg::Previous => (),
-            Msg::Stop => {
-                self.set_current_time(0);
-                self.model.current_duration = 0;
-                self.playlist.emit(StopSong);
-                self.model.cover_visible = false;
-                self.set_play_icon(PLAY_ICON);
-                self.model.stopped = true;
-                self.model.paused = false;
-            }
+            Msg::Stop => self.stop(),
             Msg::Next => (),
             Msg::Remove => (),
             Msg::Save => {
@@ -262,17 +119,19 @@ impl Widget for Win {
                 if let Some(file) = file {
                     self.playlist.emit(SaveSong(file));
                 }
-            }
+            },
             Msg::Started(pixbuf) => {
+                self.set_current_time(0);
                 self.set_play_icon(PAUSE_ICON);
                 self.model.cover_visible = true;
                 self.model.cover_pixbuf = pixbuf;
                 self.model.stopped = false;
-            }
+                self.model.paused = false;
+            },
             Msg::Duration(duration) => {
                 self.model.current_duration = duration;
                 self.model.adjustment.set_upper(duration as f64);
-            }
+            },
             Msg::Quit => gtk::main_quit(),
         }
     }
@@ -343,7 +202,6 @@ impl Widget for Win {
                 Playlist {
                     SongStarted(ref pixbuf) => Msg::Started(pixbuf.clone()),
                     SongDuration(duration) => Msg::Duration(duration),
-                    UpdateTime(t) => Msg::Update(t),
                 },
                 gtk::Image {
                     from_pixbuf: self.model.cover_pixbuf.as_ref(),
@@ -377,6 +235,17 @@ impl Widget for Win {
 }
 
 impl Win {
+
+    fn stop(&mut self) {
+        self.set_current_time(0);
+        self.model.current_duration = 0;
+        self.playlist.emit(StopSong);
+        self.model.cover_visible = false;
+        self.set_play_icon(PLAY_ICON);
+        self.model.stopped = true;
+        self.model.paused = false;
+    }
+
     fn open(&self) {
         let file = show_open_dialog(&self.window);
         if let Some(file) = file {
