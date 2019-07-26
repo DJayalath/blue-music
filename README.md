@@ -11,5 +11,8 @@ A mood focused music player
 
 ## Todo
 - GUI
+- More accurate song timing
+- Opening multiple files / open a folder
+- Refactor code to use relm patterns
 - NN-based intelligent shuffling
 - Actually getting to a releasable state
