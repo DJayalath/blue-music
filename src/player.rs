@@ -1,3 +1,4 @@
+use lazy_static;
 use rodio::Sink;
 use rodio::Source;
 use std::cmp::max;
@@ -5,9 +6,8 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::path::PathBuf;
-use std::thread;
 use std::sync::mpsc;
-use lazy_static;
+use std::thread;
 
 lazy_static! {
     static ref DEVICE: rodio::Device = rodio::default_output_device().unwrap();
@@ -40,7 +40,6 @@ impl Player {
     }
 
     pub fn stop(&mut self) {
-
         if !self.stopped {
             if let Some(t) = &self.tx {
                 t.send("stop".to_string()).unwrap();
@@ -75,7 +74,6 @@ impl Player {
                 sink.stop();
                 sink.detach();
             });
-
         } else {
             if let Some(t) = &self.tx {
                 t.send("unpause".to_string()).unwrap_or_default();

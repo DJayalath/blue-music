@@ -3,36 +3,17 @@ use gtk;
 use gtk::{
     CellLayoutExt, CellRendererPixbuf, CellRendererText, GtkListStoreExt, GtkListStoreExtManual,
     ListStore, ToValue, TreeIter, TreeModelExt, TreeSelectionExt, TreeViewColumn,
-    TreeViewColumnExt, TreeViewExt, WidgetExt,
+    TreeViewColumnExt, TreeViewExt, WidgetExt, StaticType, Type
 };
-use gtk::{StaticType, Type};
 use m3u;
 use metaflac::Tag;
-use relm::Relm;
-use relm::Widget;
+use relm::{Relm, Widget};
 use relm_derive::widget;
-use rodio::Sink;
-use std::cmp::max;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-use std::path::PathBuf;
-use std::thread;
-use std::sync::mpsc;
-use std::time::{Duration, SystemTime};
-use lazy_static;
+use std::{fs::File, path::{Path, PathBuf}, sync::mpsc, time::{Duration, SystemTime}};
 
 use crate::player::Player;
 
-use self::Msg::*;
-use self::Visibility::*;
-
-#[derive(Clone)]
-pub enum PlayerMsg {
-    PlayerPlay,
-    PlayerStop,
-    PlayerTime(u64),
-}
+use self::{Msg::*, Visibility::*};
 
 #[derive(PartialEq)]
 enum Visibility {
@@ -106,8 +87,8 @@ impl Widget for Playlist {
 
     fn update(&mut self, event: Msg) {
         match event {
-            SongDuration(duration) => (),
-            UpdateTime(duration) => (),
+            SongDuration(_) => (),
+            UpdateTime(_) => (),
             AddSong(path) => self.add(&path),
             LoadSong(path) => self.load(&path),
             NextSong => self.next(),
@@ -115,7 +96,7 @@ impl Widget for Playlist {
             PlaySong => {
                 self.play();
                 self.model.start = Some(SystemTime::now());
-                },
+            }
             PreviousSong => self.previous(),
             RemoveSong => self.remove_selection(),
             SaveSong(path) => self.save(&path),
@@ -124,9 +105,6 @@ impl Widget for Playlist {
             SongStarted(_) => (),
             StopSong => self.stop(),
         }
-
-        // we are using a closure to capture the label (else we could also use a normal function)
-
 
     }
 
@@ -145,7 +123,6 @@ impl Widget for Playlist {
 }
 
 impl Playlist {
-
     fn pause(&mut self) {
         self.model.player.pause();
     }
@@ -176,7 +153,7 @@ impl Playlist {
         } else {
             self.model
                 .model
-                .iter_nth_child(None, max(0, self.model.model.iter_n_children(None) - 1))
+                .iter_nth_child(None, std::cmp::max(0, self.model.model.iter_n_children(None) - 1))
         };
         if let Some(ref iter) = previous_iter {
             selection.select_iter(iter);
@@ -224,34 +201,32 @@ impl Playlist {
     }
 
     fn update_time(&mut self) {
-
         let (tx, rx) = mpsc::channel();
         self.model.time_rec = Some(rx);
 
         let start = SystemTime::now();
         let duration = self.model.player.duration;
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let now = SystemTime::now();
-                let elapsed = now.duration_since(start).unwrap().as_millis();
-                tx.send(elapsed).unwrap();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let now = SystemTime::now();
+            let elapsed = now.duration_since(start).unwrap().as_millis();
+            tx.send(elapsed).unwrap();
 
-                if elapsed > duration {
-                    break
-                }
+            if elapsed > duration {
+                break;
             }
         });
-
     }
 
     fn play(&mut self) {
         if let Some(path) = self.selected_path() {
-
             self.model.player.play(path.clone());
             self.model.current_song = Some(path.clone().into());
             self.model.relm.stream().emit(SongStarted(self.pixbuf()));
-            self.model.relm.stream().emit(SongDuration(self.model.player.duration));
+            self.model
+                .relm
+                .stream()
+                .emit(SongDuration(self.model.player.duration));
             self.update_time();
         }
     }

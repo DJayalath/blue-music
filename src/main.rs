@@ -19,7 +19,7 @@ use gtk::{
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
     Window,
 };
-use relm::{Relm, Update, Widget, interval};
+use relm::{interval, Relm, Update, Widget};
 use std::path::PathBuf;
 // use gtk::prelude::*;
 use gtk::Orientation::{Horizontal, Vertical};
@@ -29,7 +29,7 @@ use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
     AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongStarted, StopSong, SongDuration, UpdateTime,
+    SongDuration, SongStarted, StopSong, UpdateTime,
 };
 use playlist::Playlist;
 use relm_derive::widget;
@@ -47,12 +47,12 @@ use std::io::BufReader;
 use std::process;
 use std::sync::mpsc;
 use std::thread;
-use walkdir::WalkDir;
 use std::time::SystemTime;
+use walkdir::WalkDir;
 
 // mod player;
-mod playlist;
 mod player;
+mod playlist;
 
 // mod playlist;
 // mod song;
@@ -212,11 +212,11 @@ impl Widget for Win {
 
     fn update(&mut self, event: Msg) {
         match event {
-
             Msg::Tick => {
                 if !self.model.paused && !self.model.stopped {
                     self.set_current_time(self.model.current_time + 1000);
-                    self.elapsed.set_text(&format!("{}", millis_to_minutes(self.model.current_time)));
+                    self.elapsed
+                        .set_text(&format!("{}", millis_to_minutes(self.model.current_time)));
 
                     if self.model.current_time > self.model.current_duration {
                         self.set_current_time(0);
@@ -237,7 +237,6 @@ impl Widget for Win {
                     self.model.paused = false;
                     self.playlist.emit(PlaySong);
                     self.model.stopped = false;
-
                 } else {
                     self.model.paused = true;
                     self.playlist.emit(PauseSong);
@@ -263,20 +262,19 @@ impl Widget for Win {
                 if let Some(file) = file {
                     self.playlist.emit(SaveSong(file));
                 }
-            },
+            }
             Msg::Started(pixbuf) => {
                 self.set_play_icon(PAUSE_ICON);
                 self.model.cover_visible = true;
                 self.model.cover_pixbuf = pixbuf;
                 self.model.stopped = false;
-            },
+            }
             Msg::Duration(duration) => {
                 self.model.current_duration = duration;
                 self.model.adjustment.set_upper(duration as f64);
             }
             Msg::Quit => gtk::main_quit(),
         }
-
     }
 
     fn init_view(&mut self) {
