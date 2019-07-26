@@ -19,7 +19,7 @@ use gtk::{
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
     Window,
 };
-use relm::{Relm, Update, Widget};
+use relm::{Relm, Update, Widget, interval};
 use std::path::PathBuf;
 // use gtk::prelude::*;
 use gtk::Orientation::{Horizontal, Vertical};
@@ -29,7 +29,7 @@ use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
     AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongStarted, StopSong,
+    SongStarted, StopSong, SongDuration, UpdateTime,
 };
 use playlist::Playlist;
 use relm_derive::widget;
@@ -48,6 +48,7 @@ use std::process;
 use std::sync::mpsc;
 use std::thread;
 use walkdir::WalkDir;
+use std::time::SystemTime;
 
 // mod player;
 mod playlist;
@@ -174,16 +175,20 @@ pub enum Msg {
     Save,
     Started(Option<Pixbuf>),
     Quit,
+    Update(u128),
+    Duration(u128),
+    Tick,
 }
 
 pub struct Model {
     adjustment: Adjustment,
     cover_pixbuf: Option<Pixbuf>,
     cover_visible: bool,
-    current_duration: u64,
-    current_time: u64,
+    current_duration: u128,
+    current_time: u128,
     play_image: Image,
     stopped: bool,
+    paused: bool,
 }
 
 #[widget]
@@ -197,23 +202,50 @@ impl Widget for Win {
             current_time: 0,
             play_image: new_icon(PLAY_ICON),
             stopped: true,
+            paused: false,
         }
+    }
+
+    fn subscriptions(&mut self, relm: &Relm<Self>) {
+        interval(relm.stream(), 1000, || Msg::Tick);
     }
 
     fn update(&mut self, event: Msg) {
         match event {
+
+            Msg::Tick => {
+                if !self.model.paused && !self.model.stopped {
+                    self.set_current_time(self.model.current_time + 1000);
+                    self.elapsed.set_text(&format!("{}", millis_to_minutes(self.model.current_time)));
+
+                    if self.model.current_time > self.model.current_duration {
+                        self.set_current_time(0);
+                        self.model.current_duration = 0;
+                        self.playlist.emit(StopSong);
+                        self.model.cover_visible = false;
+                        self.set_play_icon(PLAY_ICON);
+                        self.model.stopped = true;
+                        self.model.paused = false;
+                    }
+                }
+            }
             // A call to self.label1.set_text() is automatically inserted by the
             // attribute every time the model.counter attribute is updated.
             Msg::Open => self.open(),
             Msg::PlayPause => {
                 if self.model.stopped {
+                    self.model.paused = false;
                     self.playlist.emit(PlaySong);
+                    self.model.stopped = false;
+
                 } else {
+                    self.model.paused = true;
                     self.playlist.emit(PauseSong);
                     self.set_play_icon(PLAY_ICON);
                     self.model.stopped = true;
                 }
             }
+            Msg::Update(t) => self.set_current_time(t),
             Msg::Previous => (),
             Msg::Stop => {
                 self.set_current_time(0);
@@ -222,6 +254,7 @@ impl Widget for Win {
                 self.model.cover_visible = false;
                 self.set_play_icon(PLAY_ICON);
                 self.model.stopped = true;
+                self.model.paused = false;
             }
             Msg::Next => (),
             Msg::Remove => (),
@@ -230,22 +263,27 @@ impl Widget for Win {
                 if let Some(file) = file {
                     self.playlist.emit(SaveSong(file));
                 }
-            }
+            },
             Msg::Started(pixbuf) => {
                 self.set_play_icon(PAUSE_ICON);
                 self.model.cover_visible = true;
                 self.model.cover_pixbuf = pixbuf;
                 self.model.stopped = false;
+            },
+            Msg::Duration(duration) => {
+                self.model.current_duration = duration;
+                self.model.adjustment.set_upper(duration as f64);
             }
             Msg::Quit => gtk::main_quit(),
         }
+
     }
 
     fn init_view(&mut self) {
         self.toolbar.show_all();
     }
 
-    fn set_current_time(&mut self, time: u64) {
+    fn set_current_time(&mut self, time: u128) {
         self.model.current_time = time;
         self.model.adjustment.set_value(time as f64);
     }
@@ -306,6 +344,8 @@ impl Widget for Win {
                 #[name="playlist"]
                 Playlist {
                     SongStarted(ref pixbuf) => Msg::Started(pixbuf.clone()),
+                    SongDuration(duration) => Msg::Duration(duration),
+                    UpdateTime(t) => Msg::Update(t),
                 },
                 gtk::Image {
                     from_pixbuf: self.model.cover_pixbuf.as_ref(),
@@ -318,6 +358,7 @@ impl Widget for Win {
                         draw_value: false,
                         hexpand: true,
                     },
+                    #[name="elapsed"]
                     gtk::Label {
                         text: &millis_to_minutes(self.model.current_time),
                     },
@@ -366,7 +407,7 @@ impl Win {
     }
 }
 
-fn millis_to_minutes(millis: u64) -> String {
+fn millis_to_minutes(millis: u128) -> String {
     let mut seconds = millis / 1_000;
     let minutes = seconds / 60;
     seconds %= 60;

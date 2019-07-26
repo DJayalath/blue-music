@@ -19,6 +19,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::thread;
 use std::sync::mpsc;
+use std::time::{Duration, SystemTime};
 use lazy_static;
 
 use crate::player::Player;
@@ -55,6 +56,7 @@ const PIXBUF_COLUMN: u32 = 8;
 
 #[derive(Msg)]
 pub enum Msg {
+    SongDuration(u128),
     AddSong(PathBuf),
     LoadSong(PathBuf),
     NextSong,
@@ -65,6 +67,7 @@ pub enum Msg {
     SaveSong(PathBuf),
     SongStarted(Option<Pixbuf>),
     StopSong,
+    UpdateTime(u128),
 }
 
 pub struct Model {
@@ -72,6 +75,8 @@ pub struct Model {
     model: ListStore,
     relm: Relm<Playlist>,
     player: Player,
+    start: Option<SystemTime>,
+    time_rec: Option<mpsc::Receiver<u128>>,
 }
 
 unsafe impl Send for Model {}
@@ -94,16 +99,23 @@ impl Widget for Playlist {
             ]),
             relm: relm.clone(),
             player: Player::new(),
+            start: None,
+            time_rec: None,
         }
     }
 
     fn update(&mut self, event: Msg) {
         match event {
+            SongDuration(duration) => (),
+            UpdateTime(duration) => (),
             AddSong(path) => self.add(&path),
             LoadSong(path) => self.load(&path),
             NextSong => self.next(),
             PauseSong => self.pause(),
-            PlaySong => self.play(),
+            PlaySong => {
+                self.play();
+                self.model.start = Some(SystemTime::now());
+                },
             PreviousSong => self.previous(),
             RemoveSong => self.remove_selection(),
             SaveSong(path) => self.save(&path),
@@ -112,6 +124,10 @@ impl Widget for Playlist {
             SongStarted(_) => (),
             StopSong => self.stop(),
         }
+
+        // we are using a closure to capture the label (else we could also use a normal function)
+
+
     }
 
     fn init_view(&mut self) {
@@ -207,12 +223,36 @@ impl Playlist {
         }
     }
 
+    fn update_time(&mut self) {
+
+        let (tx, rx) = mpsc::channel();
+        self.model.time_rec = Some(rx);
+
+        let start = SystemTime::now();
+        let duration = self.model.player.duration;
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let now = SystemTime::now();
+                let elapsed = now.duration_since(start).unwrap().as_millis();
+                tx.send(elapsed).unwrap();
+
+                if elapsed > duration {
+                    break
+                }
+            }
+        });
+
+    }
+
     fn play(&mut self) {
         if let Some(path) = self.selected_path() {
 
             self.model.player.play(path.clone());
             self.model.current_song = Some(path.clone().into());
             self.model.relm.stream().emit(SongStarted(self.pixbuf()));
+            self.model.relm.stream().emit(SongDuration(self.model.player.duration));
+            self.update_time();
         }
     }
 

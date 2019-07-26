@@ -1,4 +1,5 @@
 use rodio::Sink;
+use rodio::Source;
 use std::cmp::max;
 use std::fs::File;
 use std::io::BufReader;
@@ -16,6 +17,7 @@ pub struct Player {
     tx: Option<mpsc::Sender<String>>,
     stopped: bool,
     paused: bool,
+    pub duration: u128,
 }
 
 impl Player {
@@ -24,6 +26,7 @@ impl Player {
             tx: None,
             stopped: false,
             paused: false,
+            duration: 0,
         }
     }
 
@@ -52,12 +55,12 @@ impl Player {
             let (tx, rx) = mpsc::channel();
             self.tx = Some(tx);
             self.stopped = false;
+            let file = File::open(&path).unwrap();
+            let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+            self.duration = source.total_duration().unwrap().as_millis();
             thread::spawn(move || {
                 let sink = Sink::new(&DEVICE);
-                let file = File::open(&path).unwrap();
-                let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
                 sink.append(source);
-
                 loop {
                     if let Ok(c) = rx.try_recv() {
                         match &c[..] {
@@ -72,9 +75,10 @@ impl Player {
                 sink.stop();
                 sink.detach();
             });
+
         } else {
             if let Some(t) = &self.tx {
-                t.send("unpause".to_string()).unwrap();
+                t.send("unpause".to_string()).unwrap_or_default();
             }
             self.paused = false;
         }
