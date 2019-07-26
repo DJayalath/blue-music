@@ -8,6 +8,7 @@ extern crate gtk;
 extern crate relm;
 #[macro_use]
 extern crate relm_derive;
+extern crate walkdir;
 
 use gtk::{
     Adjustment, AdjustmentExt, BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
@@ -25,6 +26,8 @@ use playlist::Msg::{
 };
 use playlist::Playlist;
 use relm_derive::widget;
+use walkdir::{DirEntry, WalkDir};
+use std::ffi::OsStr;
 
 use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
@@ -247,8 +250,8 @@ impl Win {
     }
 
     fn open(&self) {
-        let file = show_open_dialog(&self.window);
-        if let Some(file) = file {
+        let files = show_open_dialog(&self.window);
+        for file in files {
             let ext = file
                 .extension()
                 .map(|ext| ext.to_str().unwrap().to_string());
@@ -285,32 +288,55 @@ fn new_icon(icon: &str) -> Image {
     Image::new_from_file(format!("./assets/{}.png", icon))
 }
 
-fn show_open_dialog(parent: &Window) -> Option<PathBuf> {
-    let mut file = None;
+fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
+    let mut folder = None;
     let dialog = FileChooserDialog::new(
         Some("Select a FLAC audio file"),
         Some(parent),
-        FileChooserAction::Open,
+        // FileChooserAction::Open,
+        FileChooserAction::SelectFolder,
     );
 
-    let flac_filter = FileFilter::new();
-    flac_filter.add_mime_type("audio/flac");
-    flac_filter.set_name("FLAC audio file");
-    dialog.add_filter(&flac_filter);
+    // let flac_filter = FileFilter::new();
+    // flac_filter.add_mime_type("audio/flac");
+    // flac_filter.set_name("FLAC audio file");
+    // dialog.add_filter(&flac_filter);
 
-    let m3u_filter = FileFilter::new();
-    m3u_filter.add_mime_type("audio/x-mpegurl");
-    m3u_filter.set_name("M3U playlist file");
-    dialog.add_filter(&m3u_filter);
+    // let m3u_filter = FileFilter::new();
+    // m3u_filter.add_mime_type("audio/x-mpegurl");
+    // m3u_filter.set_name("M3U playlist file");
+    // dialog.add_filter(&m3u_filter);
 
     dialog.add_button("Cancel", gtk::ResponseType::Cancel);
     dialog.add_button("Accept", gtk::ResponseType::Accept);
     let result = dialog.run();
     if result == GTK_RESPONSE_ACCEPT {
-        file = dialog.get_filename();
+        folder = dialog.get_filename();
     }
     dialog.destroy();
-    file
+    println!("Selected folder: {:?}", folder);
+
+    let mut files = Vec::new();
+    if let Some(f) = folder {
+
+        let path = WalkDir::new(f.as_path());
+
+        for entry in path {
+
+            if let Ok(entry) = entry {
+
+                let entry = entry.path();
+
+                if let Some(extension) = entry.extension() {
+                    if extension == OsStr::new("flac") {
+                        files.push(entry.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    files
 }
 
 fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
