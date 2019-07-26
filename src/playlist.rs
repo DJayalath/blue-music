@@ -111,11 +111,15 @@ impl Widget for Playlist {
     }
 
     view! {
-        #[name="treeview"]
-        gtk::TreeView {
-            hexpand: true,
-            model: &self.model.model,
+        gtk::ScrolledWindow {
+            visible: true,
             vexpand: true,
+            #[name="treeview"]
+            gtk::TreeView {
+                hexpand: false,
+                model: &self.model.model,
+                vexpand: false,
+            }
         }
     }
 }
@@ -363,7 +367,6 @@ impl Playlist {
     }
 
     fn set_pixbuf(&self, row: &TreeIter, tag: &Tag) {
-        println!("{}", tag.pictures().len());
         if let Some(picture) = tag.pictures().get(0) {
             let pixbuf_loader = PixbufLoader::new();
             pixbuf_loader.set_size(IMAGE_SIZE, IMAGE_SIZE);
