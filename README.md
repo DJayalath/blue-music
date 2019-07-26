@@ -1,5 +1,5 @@
 # blue-music
-A mood focused music player
+A free and open music player written in Rust
 
 ## Testing Instructions
 ### Linux
