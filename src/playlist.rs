@@ -111,6 +111,7 @@ impl Widget for Playlist {
     }
 
     view! {
+        // TODO: Fix assertions for gtk_box_gadget_distribute size >= 0
         gtk::ScrolledWindow {
             visible: true,
             vexpand: true,

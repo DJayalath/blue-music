@@ -11,10 +11,10 @@ extern crate relm_derive;
 extern crate walkdir;
 
 use gtk::{
-    Adjustment, AdjustmentExt, BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
+    BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
     FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image, ImageExt, Inhibit,
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
-    Window,
+    Window, Adjustment, AdjustmentExt, Range, RangeExt,
 };
 use relm::{interval, Relm, Update, Widget};
 use std::path::PathBuf;
@@ -55,6 +55,7 @@ pub enum Msg {
     Quit,
     Duration(u128),
     Tick,
+    Changed,
 }
 
 pub struct Model {
@@ -97,8 +98,14 @@ impl Widget for Win {
 
                     if self.model.current_time > self.model.current_duration {
                         self.stop();
+                        self.playlist.emit(NextSong);
                     }
                 }
+
+                // println!("{}", self.model.adjustment.value_changed());
+            },
+            Msg::Changed => {
+                println!("{}", self.model.adjustment.get_value());
             },
             Msg::Open => self.open(),
             Msg::PlayPause => {
@@ -213,9 +220,13 @@ impl Widget for Win {
                 gtk::Box {
                     orientation: Horizontal,
                     spacing: 10,
-                    gtk::Scale(Horizontal, &self.model.adjustment) {
+                    #[name="timing_scale"]
+                    gtk::Scale {
+                        orientation: Horizontal,
+                        adjustment: &self.model.adjustment,
                         draw_value: false,
                         hexpand: true,
+                        value_changed => Msg::Changed,
                     },
                     #[name="elapsed"]
                     gtk::Label {
