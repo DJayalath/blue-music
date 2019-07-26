@@ -28,6 +28,7 @@ use playlist::Playlist;
 use relm_derive::widget;
 use walkdir::{DirEntry, WalkDir};
 use std::ffi::OsStr;
+use pulse_simple::Playback;
 
 use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
@@ -35,8 +36,13 @@ pub const PLAY_ICON: &str = "gtk-media-play";
 
 mod player;
 mod playlist;
+mod flac;
 
 fn main() {
+
+
+    let mut dec = flac::FlacDecoder::new(&std::path::Path::new("/home/hans/Music/Africa - Toto.flac"));
+    flac::next_sample(&mut dec);
 
     Win::run(()).unwrap();
 
@@ -304,7 +310,7 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
     let dialog = FileChooserDialog::new(
         Some("Select a FLAC audio file"),
         Some(parent),
-        // FileChooserAction::Open,
+
         FileChooserAction::SelectFolder,
     );
 

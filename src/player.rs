@@ -6,6 +6,8 @@ use std::io::BufReader;
 use std::sync::mpsc;
 use std::thread;
 
+// TODO: Use pulse-simple and claxon for proper decoding and allow fast-forwarding
+
 lazy_static! {
     static ref DEVICE: rodio::Device = rodio::default_output_device().unwrap();
 }
@@ -59,6 +61,7 @@ impl Player {
             self.stopped = false;
             let file = File::open(&path).unwrap();
             let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+            // let source = source.take_duration(std::time::Duration::new(5, 0));
             self.duration = source.total_duration().unwrap().as_millis();
             thread::spawn(move || {
                 let sink = Sink::new(&DEVICE);
