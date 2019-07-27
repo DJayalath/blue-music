@@ -1,6 +1,8 @@
 # blue-music
 A free and open music player written in Rust
 
+![Now playing](/screenshots/v0-1-1.png?raw=true "Optional Title")
+
 ## Testing Instructions
 ### Linux
 1. Extract the archive
