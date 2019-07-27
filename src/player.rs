@@ -1,17 +1,11 @@
 use std::cell::Cell;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use crossbeam::queue::SegQueue;
-use futures::{AsyncSink, Async};
-use futures::sync::mpsc::UnboundedSender;
-use futures::sink::Sink;
 use pulse_simple::Playback;
-use relm::{Sender};
+use relm::Sender;
 
 use crate::flac;
 use crate::flac::FlacDecoder;
