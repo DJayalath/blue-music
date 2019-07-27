@@ -121,6 +121,10 @@ impl Widget for Win {
                     self.playlist.emit(PlaySong);
                 }
                 self.model.last_adjustment = new_adjustment;
+
+                if new_adjustment >= self.model.adjustment.get_upper() {
+                    self.playlist.emit(NextSong);
+                }
             },
             Msg::Open => self.open(),
             Msg::PlayPause => {
