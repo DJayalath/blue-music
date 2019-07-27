@@ -1,56 +1,31 @@
-use claxon::{FlacReader, frame::{FrameReader, FrameResult, Block}, input::ReadBytes};
+use claxon::FlacReader;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::convert::AsRef;
 use std::path::Path;
-use std::time::Duration;
-use rodio::Sink;
-use rodio::Source;
-use rodio::static_buffer::StaticSamplesBuffer;
-use rodio::Sample;
-use lazy_static;
-use std::sync::Mutex;
-use pulse_simple::Playback;
-extern crate pulse_simple;
-use pulse_simple::ChannelCount;
-use std::convert::TryInto;
 
 pub struct FlacDecoder {
     reader: FlacReader<File>,
-    current_frame: Block,
-    current_frame_channel: u32,
-    current_frame_sample_pos: u32,
     current_time: u32,
     sample_rate: u32,
     sample_time: f64,
     max_block_len: usize,
-    block_duration: u32,
 }
 
 impl FlacDecoder {
 
-    pub fn new(mut data: &Path) -> Self {
+    pub fn new(data: &Path) -> Self {
 
-        let mut reader = FlacReader::open(data).expect("failed to open FLAC stream");
+        let reader = FlacReader::open(data).expect("failed to open FLAC stream");
         let num_channels = reader.streaminfo().channels;
         let sample_rate = reader.streaminfo().sample_rate;
         let max_block_len = reader.streaminfo().max_block_size as usize * num_channels as usize;
-        let mut f_reader = reader.blocks();
-        let sample_buffer = Vec::with_capacity(max_block_len);
-        let current_frame = f_reader.read_next_or_eof(sample_buffer).unwrap().unwrap();
-        let block_duration = (current_frame.duration() as u32 * 1000) / sample_rate;
         let sample_time = 1000.0 / sample_rate as f64;
 
         FlacDecoder {
             reader: FlacReader::open(data).expect("failed to open FLAC stream"),
-            current_frame,
-            current_frame_channel: 0,
-            current_frame_sample_pos: 0,
             current_time: 0,
             sample_rate,
             sample_time,
             max_block_len,
-            block_duration,
         }
     }
 

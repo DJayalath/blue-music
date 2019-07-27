@@ -1,7 +1,4 @@
-#[macro_use]
-extern crate lazy_static;
 extern crate metaflac;
-extern crate rodio;
 extern crate gdk_pixbuf;
 extern crate gtk;
 #[macro_use]
@@ -15,24 +12,23 @@ use gtk::{
     BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
     FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image, ImageExt, Inhibit,
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
-    Window, Adjustment, AdjustmentExt, Range, RangeExt,
+    Window, Adjustment, AdjustmentExt, RangeExt,
 };
-use relm::{interval, Relm, Update, Widget};
+use relm::{Widget};
 use std::path::PathBuf;
 use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
-    AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
+    AddSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
     SongDuration, SongStarted, StopSong, PlayerMsgRecv, Skip,
 };
 use playlist::Playlist;
 use relm_derive::widget;
-use walkdir::{DirEntry, WalkDir};
+use walkdir::WalkDir;
 use std::ffi::OsStr;
-use pulse_simple::Playback;
 use playlist::PlayerMsg;
 
-use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
+use gtk_sys::{GTK_RESPONSE_ACCEPT};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
 pub const PLAY_ICON: &str = "gtk-media-play";
 
