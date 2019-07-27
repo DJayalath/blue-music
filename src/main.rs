@@ -14,7 +14,7 @@ use gtk::{
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
     Window, Adjustment, AdjustmentExt, RangeExt,
 };
-use relm::{Widget};
+use relm::{Widget, Relm};
 use std::path::PathBuf;
 use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
@@ -71,11 +71,12 @@ pub struct Model {
     play_image: Image,
     stopped: bool,
     last_adjustment: f64,
+    relm: Relm<Win>,
 }
 
 #[widget]
 impl Widget for Win {
-    fn model() -> Model {
+    fn model(relm: &Relm<Self>, _: ()) -> Model {
         Model {
             adjustment: Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             cover_pixbuf: None,
@@ -85,6 +86,7 @@ impl Widget for Win {
             play_image: new_icon(PLAY_ICON),
             stopped: true,
             last_adjustment: 0.0,
+            relm: relm.clone(),
         }
     }
 
@@ -110,36 +112,48 @@ impl Widget for Win {
         match event {
             Msg::MsgRecv(player_msg) => self.player_message(player_msg),
             Msg::Changed => {
-                let new_adjustment = self.model.adjustment.get_value();
-                if (new_adjustment - self.model.last_adjustment).abs() > 1000.0 {
-                    self.playlist.emit(PauseSong);
-                    self.playlist.emit(Skip(new_adjustment as u32));
-                    self.playlist.emit(PlaySong);
-                }
-                self.model.last_adjustment = new_adjustment;
+                // NOTES:
+                // - This causes the stop button malfunction
+                // - This causes the double repeat of first sample on skip
 
-                if new_adjustment >= self.model.adjustment.get_upper() {
-                    self.playlist.emit(NextSong);
-                }
+                // let new_adjustment = self.model.adjustment.get_value();
+                // if (new_adjustment - self.model.last_adjustment).abs() > 1000.0 {
+                //     self.playlist.emit(PauseSong);
+                //     self.playlist.emit(Skip(new_adjustment as u32));
+                //     self.playlist.emit(PlaySong);
+                // }
+                // self.model.last_adjustment = new_adjustment;
+
+                // if new_adjustment >= self.model.adjustment.get_upper() {
+                //     self.model.relm.stream().emit(Msg::Next);
+                // }
             },
             Msg::Open => self.open(),
             Msg::PlayPause => {
                 if self.model.stopped {
+                    self.model.last_adjustment = 0.0;
                     self.playlist.emit(PlaySong);
                 } else {
                     self.playlist.emit(PauseSong);
                     self.set_play_icon(PLAY_ICON);
                 }
             },
-            Msg::Previous => self.playlist.emit(PreviousSong),
+            Msg::Previous => {
+                self.model.last_adjustment = 0.0;
+                self.playlist.emit(PreviousSong);
+            },
             Msg::Stop => {
                 self.set_current_time(0);
+                self.model.last_adjustment = 0.0;
                 self.model.current_duration = 0;
                 self.playlist.emit(StopSong);
                 self.model.cover_visible = false;
                 self.set_play_icon(PLAY_ICON);
             },
-            Msg::Next => self.playlist.emit(NextSong),
+            Msg::Next => {
+                self.model.last_adjustment = 0.0;
+                self.playlist.emit(NextSong);
+            },
             Msg::Remove => self.playlist.emit(RemoveSong),
             Msg::Save => {
                 let file = show_save_dialog(&self.window);
@@ -342,6 +356,12 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
             if let Ok(entry) = entry {
 
                 let entry = entry.path();
+
+                // TODO: ignore hidden folders e.g. .xyz
+
+                // if entry.to_string_lossy().starts_with('.') {
+                //     continue
+                // }
 
                 if let Some(extension) = entry.extension() {
                     if extension == OsStr::new("flac") {
