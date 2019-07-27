@@ -19,10 +19,10 @@ A free and open music player written in Rust
 - Genre-scored shuffling by hill climb
 
 ## Todo
-- ~~GUI~~ A better looking GUI
-- More accurate song timing
+- ~~GUI~~ ~~A better looking GUI~~
+- ~~More accurate song timing~~
 - ~~Opening multiple files / open a folder~~ Options for both
-- ~~Refactor code to use relm patterns~~ Refactor to be safer
-- Fast-forwarding
+- ~~Refactor code to use relm patterns~~ ~~Refactor to be safer~~
+- ~~Fast-forwarding~~ Faster fast-forwading
 - NN-based intelligent shuffling
 - Actually getting to a releasable state
