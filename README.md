@@ -18,6 +18,7 @@ A free and open music player written in Rust
 
 ## Complete
 - CMD-line shuffling and playing
+- Support for FLACs
 - Genre-scored shuffling by hill climb
 
 ## Todo
@@ -26,5 +27,6 @@ A free and open music player written in Rust
 - ~~Opening multiple files / open a folder~~ Options for both
 - ~~Refactor code to use relm patterns~~ ~~Refactor to be safer~~
 - ~~Fast-forwarding~~ Faster fast-forwading
+- Support for MP3, WAV, WEBM, OGG
 - NN-based intelligent shuffling
 - Actually getting to a releasable state
