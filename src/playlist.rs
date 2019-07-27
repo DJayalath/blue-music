@@ -57,6 +57,7 @@ pub enum Msg {
     SaveSong(PathBuf),
     Skip(u32),
     SongStarted(Option<Pixbuf>),
+    SongMeta(Vec<String>),
     StopSong,
 }
 
@@ -125,6 +126,7 @@ impl Widget for Playlist {
 
             // Listened by Win
             SongStarted(_) => (),
+            SongMeta(_) => (),
             StopSong => self.stop(),
         }
 
@@ -249,6 +251,9 @@ impl Playlist {
                 }
                 self.model.current_song = Some(path.into());
                 self.model.relm.stream().emit(SongStarted(self.pixbuf()));
+
+                // Send metadata
+                self.model.relm.stream().emit(SongMeta(self.selected_meta()));
             }
         }
     }
@@ -260,6 +265,19 @@ impl Playlist {
             return value.get::<Pixbuf>();
         }
         None
+    }
+
+    fn selected_meta(&self) -> Vec<String> {
+        let mut metadata = Vec::with_capacity(5);
+        let selection = self.treeview.get_selection();
+        if let Some((_, iter)) = selection.get_selected() {
+            metadata.push(self.model.model.get_value(&iter, TITLE_COLUMN as i32).get::<String>().unwrap_or_default());
+            metadata.push(self.model.model.get_value(&iter, ARTIST_COLUMN as i32).get::<String>().unwrap_or_default());
+            metadata.push(self.model.model.get_value(&iter, ALBUM_COLUMN as i32).get::<String>().unwrap_or_default());
+            metadata.push(self.model.model.get_value(&iter, GENRE_COLUMN as i32).get::<String>().unwrap_or_default());
+            metadata.push(self.model.model.get_value(&iter, YEAR_COLUMN as i32).get::<String>().unwrap_or_default());
+        }
+        metadata
     }
 
     fn selected_path(&self) -> Option<String> {

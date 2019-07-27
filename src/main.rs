@@ -12,7 +12,7 @@ use gtk::{
     BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
     FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image, ImageExt, Inhibit,
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
-    Window, Adjustment, AdjustmentExt, RangeExt,
+    Window, Adjustment, AdjustmentExt, RangeExt, Justification, Align,
 };
 use relm::{Widget, Relm};
 use std::path::PathBuf;
@@ -20,7 +20,7 @@ use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
     AddSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongDuration, SongStarted, StopSong, PlayerMsgRecv, Skip,
+    SongDuration, SongStarted, SongMeta, StopSong, PlayerMsgRecv, Skip,
 };
 use playlist::Playlist;
 use relm_derive::widget;
@@ -52,6 +52,7 @@ pub enum Msg {
     PlayPause,
     Previous,
     Stop,
+    Meta(Vec<String>),
     MsgRecv(PlayerMsg),
     Next,
     Remove,
@@ -127,6 +128,13 @@ impl Widget for Win {
                 // if new_adjustment >= self.model.adjustment.get_upper() {
                 //     self.model.relm.stream().emit(Msg::Next);
                 // }
+            },
+            Msg::Meta(metadata) => {
+                self.title.set_markup(&format!("<span size='large'>{}</span>", metadata[0])[..]);
+                self.artist.set_markup(&format!("<span size='medium'>{}</span>", metadata[1])[..]);
+                self.album.set_markup(&format!("<span size='medium'>{}</span>", metadata[2])[..]);
+                self.genre.set_markup(&format!("<span size='medium'>{}</span>", metadata[3])[..]);
+                self.year.set_markup(&format!("<span size='medium'>{}</span>", metadata[4])[..]);
             },
             Msg::Open => self.open(),
             Msg::PlayPause => {
@@ -241,10 +249,56 @@ impl Widget for Win {
                     PlayerMsgRecv(ref player_msg) => Msg::MsgRecv(player_msg.clone()),
                     SongStarted(ref pixbuf) => Msg::Started(pixbuf.clone()),
                     SongDuration(duration) => Msg::Duration(duration),
+                    SongMeta(ref metadata) => Msg::Meta(metadata.clone()),
                 },
-                gtk::Image {
-                    from_pixbuf: self.model.cover_pixbuf.as_ref(),
+                gtk::Box {
                     visible: self.model.cover_visible,
+                    orientation: Horizontal,
+                    spacing: 10,
+
+                    gtk::Image {
+                        margin_start: 10,
+                        margin_top: 10,
+                        margin_bottom: 10,
+                        from_pixbuf: self.model.cover_pixbuf.as_ref(),
+                        visible: self.model.cover_visible,
+                    },
+
+                    gtk::Box {
+                        orientation: Vertical,
+                        spacing: 10,
+                        #[name="title"]
+                        gtk::Label {
+                            margin_top: 10,
+                            halign: Align::Start,
+                            single_line_mode: true,
+                        },
+                        #[name="artist"]
+                        gtk::Label {
+                            // text: "Title",
+                            halign: Align::Start,
+                            single_line_mode: true,
+                        },
+                        #[name="album"]
+                        gtk::Label {
+                            // text: "Title",
+                            halign: Align::Start,
+                            single_line_mode: true,
+                        },
+                        #[name="genre"]
+                        gtk::Label {
+                            // text: "Title",
+                            halign: Align::Start,
+                            single_line_mode: true,
+                        },
+                        #[name="year"]
+                        gtk::Label {
+                            // text: "Title",
+                            halign: Align::Start,
+                            single_line_mode: true,
+                        },
+                    },
+
                 },
                 gtk::Box {
                     orientation: Horizontal,
@@ -265,7 +319,7 @@ impl Widget for Win {
                         text: "/",
                     },
                     gtk::Label {
-                        // TODO: margin_right: 10,
+                        margin_end: 10,
                         text: &millis_to_minutes(self.model.current_duration),
                     },
                 }
@@ -281,6 +335,7 @@ impl Win {
 
     fn open(&self) {
         let files = show_open_dialog(&self.window);
+        let mut unopened = Vec::new();
         for file in files {
             let ext = file
                 .extension()
@@ -290,19 +345,30 @@ impl Win {
                     "flac" => self.playlist.emit(AddSong(file)),
                     "mp3" => (),
                     "m3u" => (),
-                    extension => {
-                        let dialog = MessageDialog::new(
-                            Some(&self.window),
-                            DialogFlags::empty(),
-                            MessageType::Error,
-                            ButtonsType::Ok,
-                            &format!("Cannot open file with extension .{}", extension),
-                        );
-                        dialog.run();
-                        dialog.destroy();
+                    _ => {
+                        unopened.push(file.file_name().unwrap().to_string_lossy().to_string());
                     }
                 }
             }
+        }
+
+        if !unopened.is_empty() {
+
+            let mut display = String::new();
+            for file in unopened {
+                display.push_str(&file[..]);
+                display.push('\n');
+            }
+
+            let dialog = MessageDialog::new(
+                Some(&self.window),
+                DialogFlags::empty(),
+                MessageType::Error,
+                ButtonsType::Ok,
+                &format!("Finished opening folder but could not open the following files:\n{}", display),
+            );
+            dialog.run();
+            dialog.destroy();
         }
     }
 }
@@ -349,7 +415,7 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
     let mut files = Vec::new();
     if let Some(f) = folder {
 
-        let path = WalkDir::new(f.as_path());
+        let path = WalkDir::new(f.as_path()).contents_first(false);
 
         for entry in path {
 
@@ -357,17 +423,22 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
 
                 let entry = entry.path();
 
+                // Break on first directory
+                // if entry.is_dir() {
+                //     break
+                // }
+
                 // TODO: ignore hidden folders e.g. .xyz
 
                 // if entry.to_string_lossy().starts_with('.') {
                 //     continue
                 // }
 
-                if let Some(extension) = entry.extension() {
-                    if extension == OsStr::new("flac") {
+                // if let Some(extension) = entry.extension() {
+                //     if extension == OsStr::new("flac") {
                         files.push(entry.to_path_buf());
-                    }
-                }
+                //     }
+                // }
             }
         }
     }
