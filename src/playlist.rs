@@ -7,10 +7,11 @@ use gtk::{
 };
 use m3u;
 use metaflac::Tag;
-use relm::{Relm, Widget};
+use relm::{Relm, Widget, Channel};
 use relm_derive::widget;
-use std::{fs::File, path::{Path, PathBuf}, sync::mpsc, time::{Duration, SystemTime}};
-
+use std::{fs::File, path::{Path, PathBuf}, time::{Duration, SystemTime}};
+use std::collections::HashMap;
+use futures::sync::{mpsc, oneshot};
 use crate::player::Player;
 
 use self::{Msg::*, Visibility::*};
@@ -35,13 +36,22 @@ const TRACK_COLUMN: u32 = 6;
 const PATH_COLUMN: u32 = 7;
 const PIXBUF_COLUMN: u32 = 8;
 
+#[derive(Clone)]
+pub enum PlayerMsg {
+    PlayerPlay,
+    PlayerStop,
+    PlayerTime(u64),
+}
+
 #[derive(Msg)]
 pub enum Msg {
-    SongDuration(u128),
+    SongDuration(u64),
+    DurationComputed(PathBuf, u64),
     AddSong(PathBuf),
     LoadSong(PathBuf),
     NextSong,
     PauseSong,
+    PlayerMsgRecv(PlayerMsg),
     PlaySong,
     PreviousSong,
     RemoveSong,
@@ -52,20 +62,25 @@ pub enum Msg {
 
 pub struct Model {
     current_song: Option<String>,
+    durations: HashMap<String, u64>,
     model: ListStore,
-    relm: Relm<Playlist>,
     player: Player,
-    start: Option<SystemTime>,
-    time_rec: Option<mpsc::Receiver<u128>>,
+    relm: Relm<Playlist>,
 }
-
-unsafe impl Send for Model {}
 
 #[widget]
 impl Widget for Playlist {
+
     fn model(relm: &Relm<Self>, _: ()) -> Model {
+        let stream = relm.stream().clone();
+        let (_channel, sender): (Channel<PlayerMsg>, relm::Sender<PlayerMsg>) = Channel::new(move |msg| {
+            stream.emit(PlayerMsgRecv(msg));
+        });
+        // relm::execute();
+        // relm.execute(rx, PlayerMsgRecv);
         Model {
             current_song: None,
+            durations: HashMap::new(),
             model: ListStore::new(&[
                 Pixbuf::static_type(),
                 Type::String,
@@ -78,26 +93,34 @@ impl Widget for Playlist {
                 Pixbuf::static_type(),
             ]),
             relm: relm.clone(),
-            player: Player::new(),
-            start: None,
-            time_rec: None,
+            player: Player::new(sender),
         }
     }
 
     fn update(&mut self, event: Msg) {
         match event {
-            SongDuration(_) => (),
             AddSong(path) => self.add(&path),
+            DurationComputed(path, duration) => {
+                let path = path.to_string_lossy().to_string();
+                if self.model.current_song.as_ref() == Some(&path) {
+                    self.model.relm.stream().emit(SongDuration(duration * 1000));
+                }
+                self.model.durations.insert(path, duration * 1000);
+            }
             LoadSong(path) => self.load(&path),
             NextSong => self.next(),
             PauseSong => self.pause(),
-            PlaySong => {
-                self.play();
-                self.model.start = Some(SystemTime::now());
-            }
+
+            // Listend by Win
+            PlayerMsgRecv(_) => (),
+
+            PlaySong => self.play(),
             PreviousSong => self.previous(),
             RemoveSong => self.remove_selection(),
             SaveSong(path) => self.save(&path),
+
+            // Listened by Win
+            SongDuration(_) => (),
 
             // Listened by Win
             SongStarted(_) => (),
@@ -143,7 +166,6 @@ impl Playlist {
         };
         if let Some(ref iter) = next_iter {
             selection.select_iter(iter);
-            self.stop();
             self.play();
         }
     }
@@ -162,7 +184,6 @@ impl Playlist {
         };
         if let Some(ref iter) = previous_iter {
             selection.select_iter(iter);
-            self.stop();
             self.play();
         }
     }
@@ -206,34 +227,22 @@ impl Playlist {
         }
     }
 
-    fn update_time(&mut self) {
-        let (tx, rx) = mpsc::channel();
-        self.model.time_rec = Some(rx);
-
-        let start = SystemTime::now();
-        let duration = self.model.player.duration;
-        std::thread::spawn(move || loop {
-            std::thread::sleep(Duration::from_secs(1));
-            let now = SystemTime::now();
-            let elapsed = now.duration_since(start).unwrap().as_millis();
-            tx.send(elapsed).unwrap();
-
-            if elapsed > duration {
-                break;
-            }
-        });
+    fn path(&self) -> Option<String> {
+        self.model.current_song.clone()
     }
 
     fn play(&mut self) {
         if let Some(path) = self.selected_path() {
-            self.model.player.play(path.clone());
-            self.model.current_song = Some(path.clone().into());
-            self.model.relm.stream().emit(SongStarted(self.pixbuf()));
-            self.model
-                .relm
-                .stream()
-                .emit(SongDuration(self.model.player.duration));
-            self.update_time();
+            if self.model.player.is_paused() && Some(&path) == self.path().as_ref() {
+                self.model.player.resume();
+            } else {
+                self.model.player.load(&Path::new(&path));
+                if let Some(&duration) = self.model.durations.get(&path) {
+                    self.model.relm.stream().emit(SongDuration(duration));
+                }
+                self.model.current_song = Some(path.into());
+                self.model.relm.stream().emit(SongStarted(self.pixbuf()));
+            }
         }
     }
 
@@ -256,6 +265,8 @@ impl Playlist {
     }
 
     fn add(&self, path: &Path) {
+        self.compute_duration(path);
+
         let filename = path
             .file_stem()
             .unwrap_or_default()
@@ -344,6 +355,7 @@ impl Playlist {
             view_column.pack_start(&cell, true);
             view_column.add_attribute(&cell, "pixbuf", column);
         }
+        self.treeview.append_column(&view_column);
     }
 
     fn add_text_column(&self, title: &str, column: i32) {
@@ -354,6 +366,19 @@ impl Playlist {
         view_column.pack_start(&cell, true);
         view_column.add_attribute(&cell, "text", column);
         self.treeview.append_column(&view_column);
+    }
+
+    fn compute_duration(&self, path: &Path) {
+        let path = path.to_path_buf();
+        let stream = self.model.relm.stream().clone();
+        let (_channel, sender) = Channel::new(move |(path, duration)| {
+            stream.emit(DurationComputed(path, duration));
+        });
+        std::thread::spawn(move || {
+            let duration = Player::compute_duration(&path);
+            sender.send((path, duration))
+                .expect("Cannot send computed duration");
+        });
     }
 
     fn create_columns(&self) {
