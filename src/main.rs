@@ -23,7 +23,7 @@ use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
     AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongDuration, SongStarted, StopSong, PlayerMsgRecv,
+    SongDuration, SongStarted, StopSong, PlayerMsgRecv, Skip,
 };
 use playlist::Playlist;
 use relm_derive::widget;
@@ -74,6 +74,7 @@ pub struct Model {
     current_time: u64,
     play_image: Image,
     stopped: bool,
+    last_adjustment: f64,
 }
 
 #[widget]
@@ -87,6 +88,7 @@ impl Widget for Win {
             current_time: 0,
             play_image: new_icon(PLAY_ICON),
             stopped: true,
+            last_adjustment: 0.0,
         }
     }
 
@@ -112,7 +114,13 @@ impl Widget for Win {
         match event {
             Msg::MsgRecv(player_msg) => self.player_message(player_msg),
             Msg::Changed => {
-                println!("{}", self.model.adjustment.get_value());
+                let new_adjustment = self.model.adjustment.get_value();
+                if (new_adjustment - self.model.last_adjustment).abs() > 1000.0 {
+                    self.playlist.emit(PauseSong);
+                    self.playlist.emit(Skip(new_adjustment as u32));
+                    self.playlist.emit(PlaySong);
+                }
+                self.model.last_adjustment = new_adjustment;
             },
             Msg::Open => self.open(),
             Msg::PlayPause => {
