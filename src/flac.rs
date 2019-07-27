@@ -14,10 +14,6 @@ use pulse_simple::Playback;
 extern crate pulse_simple;
 use pulse_simple::ChannelCount;
 
-lazy_static! {
-    static ref SAMPLER: Mutex<Vec<i16>> = Mutex::new(Vec::new());
-}
-
 pub struct FlacDecoder {
     reader: FlacReader<File>,
     current_frame: Block,
@@ -65,50 +61,34 @@ impl FlacDecoder {
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
-
-    pub fn next(&mut self) -> Option<i32> {
-        next_sample(self)
-    }
 }
 
-pub fn next_sample(decoder: &mut FlacDecoder) -> Option<i32> {
-
-    let device = rodio::default_output_device().unwrap();
-    let sink = Sink::new(&device);
-
-    // let mut f_reader = decoder.reader.samples();
-    // let mut data = Vec::new();
-    // if let Some(sample) = f_reader.next() {
-    //     if let Ok(sample) = sample {
-    //         data.push([sample as i16]);
-    //         // return Some(sample);
-    //     }
-    // }
-
-    let p = Playback::new("FLAC", "Play FLAC", None, decoder.reader.streaminfo().sample_rate);
-    println!("RATE: {}", decoder.reader.streaminfo().sample_rate);
+pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
 
     let mut f_reader = decoder.reader.blocks();
-    let mut sample_buffer = Vec::with_capacity(decoder.max_block_len);
-    loop {
-        match f_reader.read_next_or_eof(sample_buffer) {
-            Ok(Some(block)) => {
+    let sample_buffer = Vec::with_capacity(decoder.max_block_len);
 
-                let mut data = Vec::new();
-                for s in block.stereo_samples() {
-                    // println!("SAMPLE: {} {}", s.0, s.1);
-                    data.push([s.0 as i16, s.1 as i16]);
-                }
+    let mut data = Vec::new();
+    match f_reader.read_next_or_eof(sample_buffer) {
+        Ok(Some(block)) => {
 
-                p.write(&data[..]);
-
-                sample_buffer = block.into_buffer();
-
-            },
-            Ok(None) => break,
-            Err(_) => panic!("Failed to decode"),
-        }
+            for s in block.stereo_samples() {
+                data.push([s.0 as i16, s.1 as i16]); // Maybe i16??
+            }
+        },
+        Ok(None) => return None,
+        Err(_) => panic!("Failed to decode"),
     }
 
-    None
+    Some(data)
+}
+
+pub fn compute_duration(data: &Path) -> u64 {
+
+    let mut reader = FlacReader::open(data).expect("failed to open FLAC stream");
+    let sample_rate = reader.streaminfo().sample_rate;
+    let samples = reader.streaminfo().samples;
+    let mut total_duration = samples.unwrap() / sample_rate as u64;
+    total_duration
+
 }
