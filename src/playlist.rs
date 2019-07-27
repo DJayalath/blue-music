@@ -56,6 +56,7 @@ pub enum Msg {
     PreviousSong,
     RemoveSong,
     SaveSong(PathBuf),
+    Skip(u32),
     SongStarted(Option<Pixbuf>),
     StopSong,
 }
@@ -118,6 +119,7 @@ impl Widget for Playlist {
             PreviousSong => self.previous(),
             RemoveSong => self.remove_selection(),
             SaveSong(path) => self.save(&path),
+            Skip(time) => self.skip(time),
 
             // Listened by Win
             SongDuration(_) => (),
@@ -229,6 +231,12 @@ impl Playlist {
 
     fn path(&self) -> Option<String> {
         self.model.current_song.clone()
+    }
+
+    fn skip(&mut self, time: u32) {
+        if let Some(path) = self.selected_path() {
+            self.model.player.skip(&Path::new(&path), time);
+        }
     }
 
     fn play(&mut self) {
