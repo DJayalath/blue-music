@@ -27,6 +27,7 @@ const DEFAULT_RATE: u32 = 44100;
 
 enum Action {
     Load(PathBuf),
+    Skip(PathBuf, u32),
     Stop,
 }
 
@@ -87,6 +88,12 @@ impl Player {
                                 source = Some(FlacDecoder::new(&path));
                             },
 
+                            Skip(path, time) => {
+                                if let Some(ref mut source) = source {
+                                    flac::skip_to(&path.as_path(), time, source);
+                                }
+                            }
+
                             Stop => {
                                 source = None;
                             },
@@ -135,6 +142,10 @@ impl Player {
 
     pub fn is_paused(&self) -> bool {
         self.paused.get()
+    }
+
+    pub fn skip(&self, path: &Path, time: u32) {
+        self.emit(Skip(path.to_path_buf(), time));
     }
 
     pub fn load(&self, path: &Path) {
