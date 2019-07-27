@@ -9,6 +9,7 @@ extern crate relm;
 #[macro_use]
 extern crate relm_derive;
 extern crate walkdir;
+extern crate crossbeam;
 
 use gtk::{
     BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
@@ -22,13 +23,14 @@ use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
 use playlist::Msg::{
     AddSong, LoadSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongDuration, SongStarted, StopSong,
+    SongDuration, SongStarted, StopSong, PlayerMsgRecv,
 };
 use playlist::Playlist;
 use relm_derive::widget;
 use walkdir::{DirEntry, WalkDir};
 use std::ffi::OsStr;
 use pulse_simple::Playback;
+use playlist::PlayerMsg;
 
 use gtk_sys::{GTK_RESPONSE_ACCEPT, GTK_RESPONSE_CANCEL};
 pub const PAUSE_ICON: &str = "gtk-media-pause";
@@ -54,13 +56,13 @@ pub enum Msg {
     PlayPause,
     Previous,
     Stop,
+    MsgRecv(PlayerMsg),
     Next,
     Remove,
     Save,
     Started(Option<Pixbuf>),
     Quit,
-    Duration(u128),
-    Tick,
+    Duration(u64),
     Changed,
 }
 
@@ -68,11 +70,10 @@ pub struct Model {
     adjustment: Adjustment,
     cover_pixbuf: Option<Pixbuf>,
     cover_visible: bool,
-    current_duration: u128,
-    current_time: u128,
+    current_duration: u64,
+    current_time: u64,
     play_image: Image,
     stopped: bool,
-    paused: bool,
 }
 
 #[widget]
@@ -86,50 +87,52 @@ impl Widget for Win {
             current_time: 0,
             play_image: new_icon(PLAY_ICON),
             stopped: true,
-            paused: false,
         }
     }
 
-    fn subscriptions(&mut self, relm: &Relm<Self>) {
-        interval(relm.stream(), 1000, || Msg::Tick);
+    // fn subscriptions(&mut self, relm: &Relm<Self>) {
+    //     interval(relm.stream(), 1000, || Msg::Tick);
+    // }
+
+    fn player_message(&mut self, player_msg: PlayerMsg) {
+        match player_msg {
+            playlist::PlayerMsg::PlayerPlay => {
+                self.model.stopped = false;
+                self.set_play_icon(PAUSE_ICON);
+            },
+            playlist::PlayerMsg::PlayerStop => {
+                self.set_play_icon(PLAY_ICON);
+                self.model.stopped = true;
+            },
+            playlist::PlayerMsg::PlayerTime(time) => self.set_current_time(time),
+        }
     }
 
     fn update(&mut self, event: Msg) {
         match event {
-            Msg::Tick => {
-                if !self.model.paused && !self.model.stopped {
-                    self.set_current_time(self.model.current_time + 1000);
-                    self.elapsed
-                        .set_text(&format!("{}", millis_to_minutes(self.model.current_time)));
-
-                    if self.model.current_time > self.model.current_duration {
-                        self.stop();
-                        self.playlist.emit(NextSong);
-                    }
-                }
-
-                // println!("{}", self.model.adjustment.value_changed());
-            },
+            Msg::MsgRecv(player_msg) => self.player_message(player_msg),
             Msg::Changed => {
                 println!("{}", self.model.adjustment.get_value());
             },
             Msg::Open => self.open(),
             Msg::PlayPause => {
                 if self.model.stopped {
-                    self.model.paused = false;
                     self.playlist.emit(PlaySong);
-                    self.model.stopped = false;
                 } else {
-                    self.model.paused = true;
                     self.playlist.emit(PauseSong);
                     self.set_play_icon(PLAY_ICON);
-                    self.model.stopped = true;
                 }
             },
-            Msg::Previous => (),
-            Msg::Stop => self.stop(),
-            Msg::Next => (),
-            Msg::Remove => (),
+            Msg::Previous => self.playlist.emit(PreviousSong),
+            Msg::Stop => {
+                self.set_current_time(0);
+                self.model.current_duration = 0;
+                self.playlist.emit(StopSong);
+                self.model.cover_visible = false;
+                self.set_play_icon(PLAY_ICON);
+            },
+            Msg::Next => self.playlist.emit(NextSong),
+            Msg::Remove => self.playlist.emit(RemoveSong),
             Msg::Save => {
                 let file = show_save_dialog(&self.window);
                 if let Some(file) = file {
@@ -137,12 +140,9 @@ impl Widget for Win {
                 }
             },
             Msg::Started(pixbuf) => {
-                self.set_current_time(0);
                 self.set_play_icon(PAUSE_ICON);
                 self.model.cover_visible = true;
                 self.model.cover_pixbuf = pixbuf;
-                self.model.stopped = false;
-                self.model.paused = false;
             },
             Msg::Duration(duration) => {
                 self.model.current_duration = duration;
@@ -156,7 +156,7 @@ impl Widget for Win {
         self.toolbar.show_all();
     }
 
-    fn set_current_time(&mut self, time: u128) {
+    fn set_current_time(&mut self, time: u64) {
         self.model.current_time = time;
         self.model.adjustment.set_value(time as f64);
     }
@@ -216,6 +216,7 @@ impl Widget for Win {
                 },
                 #[name="playlist"]
                 Playlist {
+                    PlayerMsgRecv(ref player_msg) => Msg::MsgRecv(player_msg.clone()),
                     SongStarted(ref pixbuf) => Msg::Started(pixbuf.clone()),
                     SongDuration(duration) => Msg::Duration(duration),
                 },
@@ -256,16 +257,6 @@ impl Widget for Win {
 
 impl Win {
 
-    fn stop(&mut self) {
-        self.set_current_time(0);
-        self.model.current_duration = 0;
-        self.playlist.emit(StopSong);
-        self.model.cover_visible = false;
-        self.set_play_icon(PLAY_ICON);
-        self.model.stopped = true;
-        self.model.paused = false;
-    }
-
     fn open(&self) {
         let files = show_open_dialog(&self.window);
         for file in files {
@@ -294,7 +285,7 @@ impl Win {
     }
 }
 
-fn millis_to_minutes(millis: u128) -> String {
+fn millis_to_minutes(millis: u64) -> String {
     let mut seconds = millis / 1_000;
     let minutes = seconds / 60;
     seconds %= 60;
@@ -364,8 +355,8 @@ fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
         FileChooserAction::Save,
     );
     let filter = FileFilter::new();
-    filter.add_mime_type("audio/x-mpegurl");
-    filter.set_name("M3U playlist file");
+    // filter.add_mime_type("audio/x-mpegurl");
+    // filter.set_name("M3U playlist file");
     dialog.set_do_overwrite_confirmation(true);
     dialog.add_filter(&filter);
     dialog.add_button("Cancel", gtk::ResponseType::Cancel);
