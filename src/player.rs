@@ -71,7 +71,7 @@ impl Player {
                     }
                 };
 
-                let mut playback = Playback::new("FLAC", "FLAC Playback", None, DEFAULT_RATE); // Use real rate?
+                let mut playback = Playback::new("Blue Music", "The free and open music player", None, DEFAULT_RATE); // Use real rate?
                 let mut source = None;
 
                 loop {
@@ -83,7 +83,7 @@ impl Player {
                             Load(path) => {
                                 source = Some(FlacDecoder::new(&path));
                                 let rate = source.unwrap().sample_rate();
-                                playback = Playback::new("FLAC", "FLAC Playback", None, rate);
+                                playback = Playback::new("Blue Music", "The free and open music player", None, rate);
                                 send(&mut tx, PlayerPlay);
                                 source = Some(FlacDecoder::new(&path));
                             },
