@@ -9,9 +9,8 @@ use m3u;
 use metaflac::Tag;
 use relm::{Relm, Widget, Channel};
 use relm_derive::widget;
-use std::{fs::File, path::{Path, PathBuf}, time::{Duration, SystemTime}};
+use std::{fs::File, path::{Path, PathBuf}};
 use std::collections::HashMap;
-use futures::sync::{mpsc, oneshot};
 use crate::player::Player;
 
 use self::{Msg::*, Visibility::*};
