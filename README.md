@@ -30,3 +30,6 @@ A free and open music player written in Rust
 - Support for MP3, WAV, WEBM, OGG
 - NN-based intelligent shuffling
 - Actually getting to a releasable state
+
+## Known Issues
+- Failure to display certain genre strings in now playing bar due to special characters
