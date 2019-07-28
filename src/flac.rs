@@ -1,3 +1,5 @@
+static USE_FRAMES: bool = true;
+
 use claxon::FlacReader;
 use std::fs::File;
 use std::path::Path;
@@ -38,10 +40,39 @@ impl FlacDecoder {
     }
 }
 
+#[cfg(USE_FRAMES)]
 pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
 
-    let mut s_reader = decoder.reader.samples();
     let mut data = Vec::new();
+
+    let mut f_reader = decoder.reader.blocks();
+    let sample_buffer = Vec::with_capacity(decoder.max_block_len); // TODO: Re-use buffer
+
+    match f_reader.read_next_or_eof(sample_buffer) {
+
+        Ok(Some(block)) => {
+            decoder.current_time = (block.time() as u32 * 1000) / decoder.sample_rate;
+            // decoder.current_time += (block.duration() * 1000) / decoder.sample_rate;
+            for s in block.stereo_samples() {
+                println!("{} {}", s.0, s.1);
+                data.push([s.0 as i16, s.1 as i16]); // Maybe i16??
+            }
+        },
+        Ok(None) => return None,
+        Err(_) => panic!("Failed to decode"),
+
+    }
+
+    Some(data)
+
+}
+
+#[cfg(not(USE_FRAMES))]
+pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
+
+    let mut data = Vec::new();
+
+    let mut s_reader = decoder.reader.samples();
 
     let mut count = 0;
     for _ in 0..decoder.max_block_len {
@@ -59,58 +90,47 @@ pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
 
     decoder.current_time += (decoder.sample_time * count as f64) as u32;
 
+
     Some(data)
 
-    // let mut f_reader = decoder.reader.blocks();
-    // let sample_buffer = Vec::with_capacity(decoder.max_block_len); // TODO: Re-use buffer
-
-    // let mut data = Vec::new();
-    // match f_reader.read_next_or_eof(sample_buffer) {
-    //     Ok(Some(block)) => {
-    //         decoder.current_time = (block.time() as u32 * 1000) / decoder.sample_rate;
-    //         // decoder.current_time += (block.duration() * 1000) / decoder.sample_rate;
-    //         for s in block.stereo_samples() {
-    //             println!("{} {}", s.0, s.1);
-    //             data.push([s.0 as i16, s.1 as i16]); // Maybe i16??
-    //         }
-    //     },
-    //     Ok(None) => return None,
-    //     Err(_) => panic!("Failed to decode"),
-    // }
-
-    // Some(data)
 }
 
 pub fn skip_to(data: &Path, time: u32, decoder: &mut FlacDecoder) {
 
-    decoder.reader = FlacReader::open(data).expect("failed to open FLAC stream");
-    let n = (time / 1000) * decoder.sample_rate;
-    let mut s_reader = decoder.reader.samples();
-    s_reader.nth(n as usize * 2);
-    decoder.current_time = time;
+    if cfg!(USE_FRAMES) {
 
-    // decoder.reader = FlacReader::open(data).expect("failed to open FLAC stream");
-    // let mut sample_buffer = Vec::with_capacity(decoder.max_block_len);
-    // let time = ((time * decoder.sample_rate) / 1000) as u64;
+        decoder.reader = FlacReader::open(data).expect("failed to open FLAC stream");
+        let mut sample_buffer = Vec::with_capacity(decoder.max_block_len);
+        let time = ((time * decoder.sample_rate) / 1000) as u64;
 
-    // let mut f_reader = decoder.reader.blocks();
-    // loop {
-    //     match f_reader.read_next_or_eof(sample_buffer) {
-    //         Ok(Some(block)) => {
+        let mut f_reader = decoder.reader.blocks();
+        loop {
+            match f_reader.read_next_or_eof(sample_buffer) {
+                Ok(Some(block)) => {
 
-    //             let block_time = block.time();
-    //             if block_time >= time {
-    //                 decoder.current_time = (time as u32 * 100) / decoder.sample_rate;
-    //                 break
-    //             } 
+                    let block_time = block.time();
+                    if block_time >= time {
+                        decoder.current_time = (time as u32 * 100) / decoder.sample_rate;
+                        break
+                    } 
 
-    //             sample_buffer = block.into_buffer();
-    //         },
-    //         Ok(None) => panic!("Skip position out of range!"),
-    //         Err(_) => panic!("Failed to decode"),
+                    sample_buffer = block.into_buffer();
+                },
+                Ok(None) => panic!("Skip position out of range!"),
+                Err(_) => panic!("Failed to decode"),
 
-    //     }
-    // }
+            }
+        }
+
+    } else {
+
+        decoder.reader = FlacReader::open(data).expect("failed to open FLAC stream");
+        let n = (time / 1000) * decoder.sample_rate;
+        let mut s_reader = decoder.reader.samples();
+        s_reader.nth(n as usize * 2);
+        decoder.current_time = time;
+
+    }
 }
 
 pub fn compute_duration(data: &Path) -> u64 {
