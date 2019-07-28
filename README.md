@@ -1,5 +1,7 @@
 # blue-music
-A free and open, super light-weight music player written in Rust
+A super light-weight music player written in Rust. This is just a project that delves into learning Rust and extends the example given in [Rust Programming By Example](https://www.packtpub.com/application-development/rust-programming-example) hopefully until it becomes a fully featured music player.
+
+###### Note to self: Qt may be worth using over GTK+ in a future reiteration of this project
 
 ![Now playing](/screenshots/v0-1-2.png?raw=true "Optional Title")
 
