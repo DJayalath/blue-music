@@ -394,7 +394,7 @@ fn new_icon(icon: &str) -> Image {
 fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
     let mut folder = None;
     let dialog = FileChooserDialog::new(
-        Some("Select a FLAC audio file"),
+        Some("Select a music folder"),
         Some(parent),
 
         FileChooserAction::SelectFolder,
@@ -431,11 +431,7 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
 
                 let entry = entry.path();
 
-                // if let Some(extension) = entry.extension() {
-                //     if extension == OsStr::new("flac") {
-                        files.push(entry.to_path_buf());
-                //     }
-                // }
+                    files.push(entry.to_path_buf());
             }
         }
     }
@@ -451,8 +447,8 @@ fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
         FileChooserAction::Save,
     );
     let filter = FileFilter::new();
-    // filter.add_mime_type("audio/x-mpegurl");
-    // filter.set_name("M3U playlist file");
+    filter.add_mime_type("audio/x-mpegurl");
+    filter.set_name("M3U playlist file");
     dialog.set_do_overwrite_confirmation(true);
     dialog.add_filter(&filter);
     dialog.add_button("Cancel", gtk::ResponseType::Cancel);
