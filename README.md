@@ -1,5 +1,5 @@
 # blue-music
-A free and open music player written in Rust
+A free and open, super light-weight music player written in Rust
 
 ![Now playing](/screenshots/v0-1-1.png?raw=true "Optional Title")
 
