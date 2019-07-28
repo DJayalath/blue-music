@@ -12,7 +12,7 @@ use gtk::{
     BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
     FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image, ImageExt, Inhibit,
     LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
-    Window, Adjustment, AdjustmentExt, RangeExt, Justification, Align,
+    Window, Adjustment, AdjustmentExt, RangeExt, Align, WindowPosition,
 };
 use relm::{Widget, Relm};
 use std::path::PathBuf;
@@ -24,7 +24,7 @@ use playlist::Msg::{
 };
 use playlist::Playlist;
 use relm_derive::widget;
-use walkdir::WalkDir;
+use walkdir::{WalkDir, DirEntry};
 use std::ffi::OsStr;
 use playlist::PlayerMsg;
 
@@ -37,10 +37,6 @@ mod playlist;
 mod flac;
 
 fn main() {
-
-
-    let mut dec = flac::FlacDecoder::new(&std::path::Path::new("/home/hans/Music/Africa - Toto.flac"));
-    flac::next_sample(&mut dec);
 
     Win::run(()).unwrap();
 
@@ -201,6 +197,9 @@ impl Widget for Win {
         #[name="window"]
         gtk::Window {
             title: "Blue Music",
+            property_default_height: 650,
+            property_default_width: 1000,
+            position: WindowPosition::Center,
             gtk::Box {
                 orientation: Vertical,
                 #[name="toolbar"]
@@ -208,40 +207,48 @@ impl Widget for Win {
                     gtk::ToolButton {
                         icon_widget: &new_icon("document-open"),
                         clicked => Msg::Open,
+                        tooltip_text: "Open folder",
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("document-save"),
                         clicked => Msg::Save,
+                        tooltip_text: "Save playlist",
                     },
                     gtk::SeparatorToolItem {
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("gtk-media-previous"),
                         clicked => playlist@PreviousSong,
+                        tooltip_text: "Previous song",
                     },
                     gtk::ToolButton {
                         icon_widget: &self.model.play_image,
                         clicked => Msg::PlayPause,
+                        tooltip_text: "Play/Pause",
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("gtk-media-stop"),
                         clicked => Msg::Stop,
+                        tooltip_text: "Stop",
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("gtk-media-next"),
                         clicked => playlist@NextSong,
+                        tooltip_text: "Next song",
                     },
                     gtk::SeparatorToolItem {
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("remove"),
                         clicked => playlist@RemoveSong,
+                        tooltip_text: "Remove selected",
                     },
                     gtk::SeparatorToolItem {
                     },
                     gtk::ToolButton {
                         icon_widget: &new_icon("gtk-quit"),
                         clicked => Msg::Quit,
+                        tooltip_text: "Quit",
                     },
                 },
                 #[name="playlist"]
@@ -415,24 +422,14 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
     let mut files = Vec::new();
     if let Some(f) = folder {
 
-        let path = WalkDir::new(f.as_path()).contents_first(false);
+        let path = WalkDir::new(f.as_path()).contents_first(false).sort_by(|a,b| a.file_name().cmp(b.file_name())).into_iter();
 
-        for entry in path {
+        // Iterate over directories and skip if hidden
+        for entry in path.filter_entry(|e| !is_hidden(e)) {
 
             if let Ok(entry) = entry {
 
                 let entry = entry.path();
-
-                // Break on first directory
-                // if entry.is_dir() {
-                //     break
-                // }
-
-                // TODO: ignore hidden folders e.g. .xyz
-
-                // if entry.to_string_lossy().starts_with('.') {
-                //     continue
-                // }
 
                 // if let Some(extension) = entry.extension() {
                 //     if extension == OsStr::new("flac") {
@@ -466,4 +463,11 @@ fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
     }
     dialog.destroy();
     file
+}
+
+fn is_hidden(entry: &DirEntry) -> bool {
+    entry.file_name()
+         .to_str()
+         .map(|s| s.starts_with("."))
+         .unwrap_or(false)
 }
