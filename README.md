@@ -1,7 +1,7 @@
 # blue-music
 A free and open, super light-weight music player written in Rust
 
-![Now playing](/screenshots/v0-1-1.png?raw=true "Optional Title")
+![Now playing](/screenshots/v0-1-2.png?raw=true "Optional Title")
 
 ## Testing Instructions
 ### Linux
