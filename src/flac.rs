@@ -5,11 +5,12 @@ use std::fs::File;
 use std::path::Path;
 
 pub struct FlacDecoder {
-    reader: FlacReader<File>,
+    pub reader: FlacReader<File>,
     current_time: u32,
-    sample_rate: u32,
+    pub sample_rate: u32,
     sample_time: f64,
     max_block_len: usize,
+    pub num_channels: u32,
 }
 
 impl FlacDecoder {
@@ -28,6 +29,7 @@ impl FlacDecoder {
             sample_rate,
             sample_time,
             max_block_len,
+            num_channels,
         }
     }
 
@@ -38,9 +40,21 @@ impl FlacDecoder {
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
+
 }
 
-#[cfg(USE_FRAMES)]
+pub fn next(s_reader: &mut claxon::FlacSamples<&mut claxon::input::BufferedReader<std::fs::File>>) -> Option<i32> {
+
+    if let Some(s1) = s_reader.next(){
+        if let Ok(s1) = s1 {
+            return Some(s1);
+        }
+    }
+
+    None
+}
+
+#[cfg(not(USE_FRAMES))]
 pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
 
     let mut data = Vec::new();
@@ -51,10 +65,10 @@ pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
     match f_reader.read_next_or_eof(sample_buffer) {
 
         Ok(Some(block)) => {
-            decoder.current_time = (block.time() as u32 * 1000) / decoder.sample_rate;
+            decoder.current_time = ((block.time() as u64 * 1000) / decoder.sample_rate as u64) as u32;
             // decoder.current_time += (block.duration() * 1000) / decoder.sample_rate;
             for s in block.stereo_samples() {
-                println!("{} {}", s.0, s.1);
+                // println!("{} {}", s.0, s.1);
                 data.push([s.0 as i16, s.1 as i16]); // Maybe i16??
             }
         },
@@ -67,7 +81,7 @@ pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
 
 }
 
-#[cfg(not(USE_FRAMES))]
+#[cfg(USE_FRAMES)]
 pub fn next_sample(decoder: &mut FlacDecoder) -> Option<Vec<[i16; 2]>> {
 
     let mut data = Vec::new();

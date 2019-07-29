@@ -4,7 +4,6 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use crossbeam::queue::SegQueue;
-use pulse_simple::Playback;
 use relm::Sender;
 
 use crate::flac;
@@ -16,6 +15,11 @@ use crate::playlist::PlayerMsg::{
     PlayerTime,
 };
 use self::Action::*;
+
+#[cfg(target_os = "windows")]
+use rodio::Source;
+#[cfg(target_os = "linux")]
+use pulse_simple::Playback;
 
 const DEFAULT_RATE: u32 = 44100;
 
@@ -41,6 +45,12 @@ pub struct Player {
 impl Player {
     pub(crate) fn new(tx: Sender<PlayerMsg>) -> Self {
 
+        #[cfg(target_os = "windows")]
+        {
+            let device = rodio::default_output_device().unwrap();
+            let mut sink = rodio::Sink::new(&device);
+        }
+
         let condition_variable = Arc::new(
             (Mutex::new(false), Condvar::new())
         );
@@ -65,7 +75,11 @@ impl Player {
                     }
                 };
 
-                let mut playback = Playback::new("Blue Music", "The free and open music player", None, DEFAULT_RATE); // Use real rate?
+                let mut playback = None;
+                #[cfg(target_os = "linux")]
+                {
+                    playback = Some(Playback::new("Blue Music", "The free and open music player", None, DEFAULT_RATE));
+                }
                 let mut source = None;
 
                 loop {
@@ -75,9 +89,25 @@ impl Player {
                         match action {
 
                             Load(path) => {
+                                
                                 source = Some(FlacDecoder::new(&path));
                                 let rate = source.unwrap().sample_rate();
-                                playback = Playback::new("Blue Music", "The free and open music player", None, rate);
+                                println!("RATE: {}", rate);
+                                source = Some(FlacDecoder::new(&path));
+                                let channels = source.unwrap().num_channels;
+                                println!("{}", channels);
+
+                                #[cfg(target_os = "linux")]
+                                {
+                                    playback = Some(Playback::new("Blue Music", "The free and open music player", None, rate));
+                                }
+
+                                #[cfg(target_os = "windows")]
+                                {
+                                    sink.stop();
+                                    sink = rodio::Sink::new(&device);
+                                }
+
                                 send(&mut tx, PlayerPlay);
                                 source = Some(FlacDecoder::new(&path));
                             },
@@ -96,10 +126,30 @@ impl Player {
 
                         let mut written = false;
                         if let Some(ref mut source) = source {
-                            if let Some(buf) = iter_to_buffer(source) {
+                            if let Some(mut buf) = iter_to_buffer(source) {
                                 if buf.len() > 0 {
+
                                     send(&mut tx, PlayerTime(source.current_time() as u64));
-                                    playback.write(&buf[..]);
+
+                                    #[cfg(target_os = "windows")]
+                                    {
+                                        let mut single_buf = Vec::with_capacity(buf.len() * 2);
+                                        for sample in buf {
+                                            single_buf.push(sample[0]);
+                                            single_buf.push(sample[1]);
+                                        }
+
+                                        let sauce = rodio::buffer::SamplesBuffer::new(2, 44100, &single_buf[..]);
+                                        sink.append(sauce);
+                                    }
+
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        if let Some(ref playback) = playback {
+                                            playback.write(&buf[..]);
+                                        }
+                                    }
+                         
                                     written = true;
                                 }
                             }
