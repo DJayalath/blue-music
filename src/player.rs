@@ -42,14 +42,38 @@ pub struct Player {
     tx: Sender<PlayerMsg>,
 }
 
+#[cfg(target_os = "windows")]
+struct DecodingSystem {
+    device: rodio::Device,
+    sink: rodio::Sink,
+}
+
+#[cfg(target_os = "windows")]
+impl DecodingSystem {
+    pub fn new() -> Self {
+        let device = rodio::default_output_device().unwrap();
+        let sink = rodio::Sink::new(&device);
+        DecodingSystem {device, sink}
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct DecodingSystem {
+    playback: Playback,
+}
+
+#[cfg(target_os = "linux")]
+impl DecodingSystem {
+    pub fn new() -> Self {
+        let mut playback = Playback::new("Blue Music", "The free and open music player", None, DEFAULT_RATE);
+        DecodingSystem {playback};
+    }
+}
+
 impl Player {
     pub(crate) fn new(tx: Sender<PlayerMsg>) -> Self {
 
-        #[cfg(target_os = "windows")]
-        {
-            let device = rodio::default_output_device().unwrap();
-            let mut sink = rodio::Sink::new(&device);
-        }
+        let mut decoding_system = DecodingSystem::new();
 
         let condition_variable = Arc::new(
             (Mutex::new(false), Condvar::new())
@@ -75,11 +99,6 @@ impl Player {
                     }
                 };
 
-                let mut playback = None;
-                #[cfg(target_os = "linux")]
-                {
-                    playback = Some(Playback::new("Blue Music", "The free and open music player", None, DEFAULT_RATE));
-                }
                 let mut source = None;
 
                 loop {
@@ -99,13 +118,13 @@ impl Player {
 
                                 #[cfg(target_os = "linux")]
                                 {
-                                    playback = Some(Playback::new("Blue Music", "The free and open music player", None, rate));
+                                    decoding_system.playback = Playback::new("Blue Music", "The free and open music player", None, rate);
                                 }
 
                                 #[cfg(target_os = "windows")]
                                 {
-                                    sink.stop();
-                                    sink = rodio::Sink::new(&device);
+                                    decoding_system.sink.stop();
+                                    decoding_system.sink = rodio::Sink::new(&decoding_system.device);
                                 }
 
                                 send(&mut tx, PlayerPlay);
@@ -140,14 +159,13 @@ impl Player {
                                         }
 
                                         let sauce = rodio::buffer::SamplesBuffer::new(2, 44100, &single_buf[..]);
-                                        sink.append(sauce);
+
+                                        decoding_system.sink.append(sauce);
                                     }
 
                                     #[cfg(target_os = "linux")]
                                     {
-                                        if let Some(ref playback) = playback {
-                                            playback.write(&buf[..]);
-                                        }
+                                        decoding_system.playback.write(&buf[..]);
                                     }
                          
                                     written = true;
