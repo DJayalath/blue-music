@@ -6,19 +6,11 @@ use std::thread;
 use crossbeam::queue::SegQueue;
 use relm::Sender;
 
+use self::Action::*;
 use crate::flac;
 use crate::flac::FlacDecoder;
-use crate::playlist::PlayerMsg::{
-    self,
-    PlayerPlay,
-    PlayerStop,
-    PlayerTime,
-};
-use self::Action::*;
+use crate::playlist::PlayerMsg::{self, PlayerPlay, PlayerStop, PlayerTime};
 
-#[cfg(target_os = "windows")]
-use rodio::Source;
-#[cfg(target_os = "linux")]
 use pulse_simple::Playback;
 
 const DEFAULT_RATE: u32 = 44100;
@@ -42,42 +34,10 @@ pub struct Player {
     tx: Sender<PlayerMsg>,
 }
 
-#[cfg(target_os = "windows")]
-struct DecodingSystem {
-    device: rodio::Device,
-    sink: rodio::Sink,
-}
-
-#[cfg(target_os = "windows")]
-impl DecodingSystem {
-    pub fn new() -> Self {
-        let device = rodio::default_output_device().unwrap();
-        let sink = rodio::Sink::new(&device);
-        DecodingSystem {device, sink}
-    }
-}
-
-#[cfg(target_os = "linux")]
-struct DecodingSystem {
-    playback: Playback,
-}
-
-#[cfg(target_os = "linux")]
-impl DecodingSystem {
-    pub fn new() -> Self {
-        let mut playback = Playback::new("Blue Music", "The free and open music player", None, DEFAULT_RATE);
-        DecodingSystem {playback};
-    }
-}
-
 impl Player {
     pub(crate) fn new(tx: Sender<PlayerMsg>) -> Self {
 
-        let mut decoding_system = DecodingSystem::new();
-
-        let condition_variable = Arc::new(
-            (Mutex::new(false), Condvar::new())
-        );
+        let condition_variable = Arc::new((Mutex::new(false), Condvar::new()));
 
         let event_loop = EventLoop {
             condition_variable: condition_variable.clone(),
@@ -89,7 +49,6 @@ impl Player {
             let mut tx = tx.clone();
             let event_loop = event_loop.clone();
             thread::spawn(move || {
-
                 let block = || {
                     let (ref lock, ref condition_variable) = *condition_variable;
                     let mut started = lock.lock().unwrap();
@@ -99,37 +58,32 @@ impl Player {
                     }
                 };
 
+                #[cfg(target_os = "linux")]
+                let mut playback = Playback::new(
+                    "Blue Music",
+                    "The free and open music player",
+                    None,
+                    DEFAULT_RATE,
+                );
                 let mut source = None;
 
                 loop {
-
                     if let Ok(action) = event_loop.queue.pop() {
-
                         match action {
-
                             Load(path) => {
-                                
                                 source = Some(FlacDecoder::new(&path));
                                 let rate = source.unwrap().sample_rate();
-                                println!("RATE: {}", rate);
-                                source = Some(FlacDecoder::new(&path));
-                                let channels = source.unwrap().num_channels;
-                                println!("{}", channels);
 
-                                #[cfg(target_os = "linux")]
-                                {
-                                    decoding_system.playback = Playback::new("Blue Music", "The free and open music player", None, rate);
-                                }
-
-                                #[cfg(target_os = "windows")]
-                                {
-                                    decoding_system.sink.stop();
-                                    decoding_system.sink = rodio::Sink::new(&decoding_system.device);
-                                }
+                                playback = Playback::new(
+                                    "Blue Music",
+                                    "The free and open music player",
+                                    None,
+                                    rate,
+                                );
 
                                 send(&mut tx, PlayerPlay);
                                 source = Some(FlacDecoder::new(&path));
-                            },
+                            }
 
                             Skip(path, time) => {
                                 if let Some(ref mut source) = source {
@@ -139,35 +93,17 @@ impl Player {
 
                             Stop => {
                                 source = None;
-                            },
+                            }
                         }
                     } else if *event_loop.playing.lock().unwrap() {
-
                         let mut written = false;
                         if let Some(ref mut source) = source {
-                            if let Some(mut buf) = iter_to_buffer(source) {
+                            if let Some(buf) = iter_to_buffer(source) {
                                 if buf.len() > 0 {
-
                                     send(&mut tx, PlayerTime(source.current_time() as u64));
 
-                                    #[cfg(target_os = "windows")]
-                                    {
-                                        let mut single_buf = Vec::with_capacity(buf.len() * 2);
-                                        for sample in buf {
-                                            single_buf.push(sample[0]);
-                                            single_buf.push(sample[1]);
-                                        }
+                                    playback.write(&buf[..]);
 
-                                        let sauce = rodio::buffer::SamplesBuffer::new(2, 44100, &single_buf[..]);
-
-                                        decoding_system.sink.append(sauce);
-                                    }
-
-                                    #[cfg(target_os = "linux")]
-                                    {
-                                        decoding_system.playback.write(&buf[..]);
-                                    }
-                         
                                     written = true;
                                 }
                             }
@@ -183,7 +119,6 @@ impl Player {
                         block();
                     }
                 }
-
             });
         }
 

@@ -1,17 +1,20 @@
+use crate::player::Player;
 use gdk_pixbuf::{InterpType, Pixbuf, PixbufLoader, PixbufLoaderExt};
 use gtk;
 use gtk::{
     CellLayoutExt, CellRendererPixbuf, CellRendererText, GtkListStoreExt, GtkListStoreExtManual,
-    ListStore, ToValue, TreeIter, TreeModelExt, TreeSelectionExt, TreeViewColumn,
-    TreeViewColumnExt, TreeViewExt, WidgetExt, StaticType, Type
+    ListStore, StaticType, ToValue, TreeIter, TreeModelExt, TreeSelectionExt, TreeViewColumn,
+    TreeViewColumnExt, TreeViewExt, Type, WidgetExt,
 };
 use m3u;
 use metaflac::Tag;
-use relm::{Relm, Widget, Channel};
+use relm::{Channel, Relm, Widget};
 use relm_derive::widget;
-use std::{fs::File, path::{Path, PathBuf}};
 use std::collections::HashMap;
-use crate::player::Player;
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use self::{Msg::*, Visibility::*};
 
@@ -71,12 +74,12 @@ pub struct Model {
 
 #[widget]
 impl Widget for Playlist {
-
     fn model(relm: &Relm<Self>, _: ()) -> Model {
         let stream = relm.stream().clone();
-        let (_channel, sender): (Channel<PlayerMsg>, relm::Sender<PlayerMsg>) = Channel::new(move |msg| {
-            stream.emit(PlayerMsgRecv(msg));
-        });
+        let (_channel, sender): (Channel<PlayerMsg>, relm::Sender<PlayerMsg>) =
+            Channel::new(move |msg| {
+                stream.emit(PlayerMsgRecv(msg));
+            });
         // relm::execute();
         // relm.execute(rx, PlayerMsgRecv);
         Model {
@@ -129,7 +132,6 @@ impl Widget for Playlist {
             SongMeta(_) => (),
             StopSong => self.stop(),
         }
-
     }
 
     fn init_view(&mut self) {
@@ -152,7 +154,6 @@ impl Widget for Playlist {
 }
 
 impl Playlist {
-
     fn pause(&mut self) {
         self.model.player.pause();
     }
@@ -181,9 +182,10 @@ impl Playlist {
             }
             Some(iter)
         } else {
-            self.model
-                .model
-                .iter_nth_child(None, std::cmp::max(0, self.model.model.iter_n_children(None) - 1))
+            self.model.model.iter_nth_child(
+                None,
+                std::cmp::max(0, self.model.model.iter_n_children(None) - 1),
+            )
         };
         if let Some(ref iter) = previous_iter {
             selection.select_iter(iter);
@@ -253,7 +255,10 @@ impl Playlist {
                 self.model.relm.stream().emit(SongStarted(self.pixbuf()));
 
                 // Send metadata
-                self.model.relm.stream().emit(SongMeta(self.selected_meta()));
+                self.model
+                    .relm
+                    .stream()
+                    .emit(SongMeta(self.selected_meta()));
             }
         }
     }
@@ -271,11 +276,41 @@ impl Playlist {
         let mut metadata = Vec::with_capacity(5);
         let selection = self.treeview.get_selection();
         if let Some((_, iter)) = selection.get_selected() {
-            metadata.push(self.model.model.get_value(&iter, TITLE_COLUMN as i32).get::<String>().unwrap_or_default());
-            metadata.push(self.model.model.get_value(&iter, ARTIST_COLUMN as i32).get::<String>().unwrap_or_default());
-            metadata.push(self.model.model.get_value(&iter, ALBUM_COLUMN as i32).get::<String>().unwrap_or_default());
-            metadata.push(self.model.model.get_value(&iter, GENRE_COLUMN as i32).get::<String>().unwrap_or_default());
-            metadata.push(self.model.model.get_value(&iter, YEAR_COLUMN as i32).get::<String>().unwrap_or_default());
+            metadata.push(
+                self.model
+                    .model
+                    .get_value(&iter, TITLE_COLUMN as i32)
+                    .get::<String>()
+                    .unwrap_or_default(),
+            );
+            metadata.push(
+                self.model
+                    .model
+                    .get_value(&iter, ARTIST_COLUMN as i32)
+                    .get::<String>()
+                    .unwrap_or_default(),
+            );
+            metadata.push(
+                self.model
+                    .model
+                    .get_value(&iter, ALBUM_COLUMN as i32)
+                    .get::<String>()
+                    .unwrap_or_default(),
+            );
+            metadata.push(
+                self.model
+                    .model
+                    .get_value(&iter, GENRE_COLUMN as i32)
+                    .get::<String>()
+                    .unwrap_or_default(),
+            );
+            metadata.push(
+                self.model
+                    .model
+                    .get_value(&iter, YEAR_COLUMN as i32)
+                    .get::<String>()
+                    .unwrap_or_default(),
+            );
         }
         metadata
     }
@@ -401,7 +436,8 @@ impl Playlist {
         });
         std::thread::spawn(move || {
             let duration = Player::compute_duration(&path);
-            sender.send((path, duration))
+            sender
+                .send((path, duration))
                 .expect("Cannot send computed duration");
         });
     }

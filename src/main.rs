@@ -1,45 +1,42 @@
-extern crate metaflac;
 extern crate gdk_pixbuf;
 extern crate gtk;
+extern crate metaflac;
 #[macro_use]
 extern crate relm;
 #[macro_use]
 extern crate relm_derive;
-extern crate walkdir;
 extern crate crossbeam;
+extern crate walkdir;
 
-use gtk::{
-    BoxExt, ButtonsType, DialogExt, DialogFlags, FileChooserAction,
-    FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image, ImageExt, Inhibit,
-    LabelExt, MessageDialog, MessageType, OrientableExt, ScaleExt, ToolButtonExt, WidgetExt,
-    Window, Adjustment, AdjustmentExt, RangeExt, Align, WindowPosition,
-};
-use relm::{Widget, Relm};
-use std::path::PathBuf;
-use gtk::Orientation::{Horizontal, Vertical};
 use gdk_pixbuf::Pixbuf;
-use playlist::Msg::{
-    AddSong, NextSong, PauseSong, PlaySong, PreviousSong, RemoveSong, SaveSong,
-    SongDuration, SongStarted, SongMeta, StopSong, PlayerMsgRecv, Skip,
+use gtk::Orientation::{Horizontal, Vertical};
+use gtk::{
+    Adjustment, AdjustmentExt, Align, BoxExt, ButtonsType, DialogExt, DialogFlags,
+    FileChooserAction, FileChooserDialog, FileChooserExt, FileFilter, GtkWindowExt, Image,
+    ImageExt, Inhibit, LabelExt, MessageDialog, MessageType, OrientableExt, RangeExt, ScaleExt,
+    ToolButtonExt, WidgetExt, Window, WindowPosition,
 };
-use playlist::Playlist;
-use relm_derive::widget;
-use walkdir::{WalkDir, DirEntry};
-use std::ffi::OsStr;
+use playlist::Msg::{
+    AddSong, NextSong, PauseSong, PlaySong, PlayerMsgRecv, PreviousSong, RemoveSong, SaveSong,
+    Skip, SongDuration, SongMeta, SongStarted, StopSong,
+};
 use playlist::PlayerMsg;
+use playlist::Playlist;
+use relm::{Relm, Widget};
+use relm_derive::widget;
+use std::path::PathBuf;
+use walkdir::{DirEntry, WalkDir};
 
-use gtk_sys::{GTK_RESPONSE_ACCEPT};
+use gtk_sys::GTK_RESPONSE_ACCEPT;
 pub const PAUSE_ICON: &str = "gtk-media-pause";
 pub const PLAY_ICON: &str = "gtk-media-play";
 
+mod flac;
 mod player;
 mod playlist;
-mod flac;
 
 fn main() {
-
     Win::run(()).unwrap();
-
 }
 
 #[derive(Msg)]
@@ -96,11 +93,11 @@ impl Widget for Win {
             playlist::PlayerMsg::PlayerPlay => {
                 self.model.stopped = false;
                 self.set_play_icon(PAUSE_ICON);
-            },
+            }
             playlist::PlayerMsg::PlayerStop => {
                 self.set_play_icon(PLAY_ICON);
                 self.model.stopped = true;
-            },
+            }
             playlist::PlayerMsg::PlayerTime(time) => self.set_current_time(time),
         }
     }
@@ -124,14 +121,19 @@ impl Widget for Win {
                 // if new_adjustment >= self.model.adjustment.get_upper() {
                 //     self.model.relm.stream().emit(Msg::Next);
                 // }
-            },
+            }
             Msg::Meta(metadata) => {
-                self.title.set_markup(&format!("<span size='large'>{}</span>", metadata[0])[..]);
-                self.artist.set_markup(&format!("<span size='medium'>{}</span>", metadata[1])[..]);
-                self.album.set_markup(&format!("<span size='medium'>{}</span>", metadata[2])[..]);
-                self.genre.set_markup(&format!("<span size='medium'>{}</span>", metadata[3])[..]);
-                self.year.set_markup(&format!("<span size='medium'>{}</span>", metadata[4])[..]);
-            },
+                self.title
+                    .set_markup(&format!("<span size='large'>{}</span>", metadata[0])[..]);
+                self.artist
+                    .set_markup(&format!("<span size='medium'>{}</span>", metadata[1])[..]);
+                self.album
+                    .set_markup(&format!("<span size='medium'>{}</span>", metadata[2])[..]);
+                self.genre
+                    .set_markup(&format!("<span size='medium'>{}</span>", metadata[3])[..]);
+                self.year
+                    .set_markup(&format!("<span size='medium'>{}</span>", metadata[4])[..]);
+            }
             Msg::Open => self.open(),
             Msg::PlayPause => {
                 if self.model.stopped {
@@ -141,11 +143,11 @@ impl Widget for Win {
                     self.playlist.emit(PauseSong);
                     self.set_play_icon(PLAY_ICON);
                 }
-            },
+            }
             Msg::Previous => {
                 self.model.last_adjustment = 0.0;
                 self.playlist.emit(PreviousSong);
-            },
+            }
             Msg::Stop => {
                 self.set_current_time(0);
                 self.model.last_adjustment = 0.0;
@@ -153,27 +155,27 @@ impl Widget for Win {
                 self.playlist.emit(StopSong);
                 self.model.cover_visible = false;
                 self.set_play_icon(PLAY_ICON);
-            },
+            }
             Msg::Next => {
                 self.model.last_adjustment = 0.0;
                 self.playlist.emit(NextSong);
-            },
+            }
             Msg::Remove => self.playlist.emit(RemoveSong),
             Msg::Save => {
                 let file = show_save_dialog(&self.window);
                 if let Some(file) = file {
                     self.playlist.emit(SaveSong(file));
                 }
-            },
+            }
             Msg::Started(pixbuf) => {
                 self.set_play_icon(PAUSE_ICON);
                 self.model.cover_visible = true;
                 self.model.cover_pixbuf = pixbuf;
-            },
+            }
             Msg::Duration(duration) => {
                 self.model.current_duration = duration;
                 self.model.adjustment.set_upper(duration as f64);
-            },
+            }
             Msg::Quit => gtk::main_quit(),
         }
     }
@@ -339,7 +341,6 @@ impl Widget for Win {
 }
 
 impl Win {
-
     fn open(&self) {
         let files = show_open_dialog(&self.window);
         let mut unopened = Vec::new();
@@ -360,7 +361,6 @@ impl Win {
         }
 
         if !unopened.is_empty() {
-
             let mut display = String::new();
             for file in unopened {
                 display.push_str(&file[..]);
@@ -372,7 +372,10 @@ impl Win {
                 DialogFlags::empty(),
                 MessageType::Error,
                 ButtonsType::Ok,
-                &format!("Finished opening folder but could not open the following files:\n{}", display),
+                &format!(
+                    "Finished opening folder but could not open the following files:\n{}",
+                    display
+                ),
             );
             dialog.run();
             dialog.destroy();
@@ -396,7 +399,6 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
     let dialog = FileChooserDialog::new(
         Some("Select a music folder"),
         Some(parent),
-
         FileChooserAction::SelectFolder,
     );
 
@@ -421,17 +423,17 @@ fn show_open_dialog(parent: &Window) -> Vec<PathBuf> {
 
     let mut files = Vec::new();
     if let Some(f) = folder {
-
-        let path = WalkDir::new(f.as_path()).contents_first(false).sort_by(|a,b| a.file_name().cmp(b.file_name())).into_iter();
+        let path = WalkDir::new(f.as_path())
+            .contents_first(false)
+            .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+            .into_iter();
 
         // Iterate over directories and skip if hidden
         for entry in path.filter_entry(|e| !is_hidden(e)) {
-
             if let Ok(entry) = entry {
-
                 let entry = entry.path();
 
-                    files.push(entry.to_path_buf());
+                files.push(entry.to_path_buf());
             }
         }
     }
@@ -462,8 +464,9 @@ fn show_save_dialog(parent: &Window) -> Option<PathBuf> {
 }
 
 fn is_hidden(entry: &DirEntry) -> bool {
-    entry.file_name()
-         .to_str()
-         .map(|s| s.starts_with("."))
-         .unwrap_or(false)
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| s.starts_with("."))
+        .unwrap_or(false)
 }
