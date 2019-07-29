@@ -19,9 +19,4 @@ gtk-sys = "0.8.0"
 relm = "^0.16.0"
 relm-derive = "0.17.0"
 m3u = "1.0.0"
-
-[target.'cfg(unix)'.dependencies]
 pulse-simple = "1.0.1"
-
-[target.'cfg(windows)'.dependencies]
-rodio = "0.9.0"
