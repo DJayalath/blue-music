@@ -26,9 +26,10 @@ Grab the latest binaries [here](https://github.com/armytricks/blue-music/release
 - Smoother transitions between songs (closest moods, genres, volume, etc.)
 
 ## Complete
-- CMD-line shuffling and playing
+- ~~CMD-line shuffling and playing~~ GUI Controls
 - Support for FLACs
-- Genre-scored shuffling by hill climb
+- ~~Genre-scored shuffling by hill climb~~ Fully operational music playback
+- Recursive folder loading
 
 ## Todo
 - ~~GUI~~ ~~A better looking GUI~~
