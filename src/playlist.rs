@@ -148,7 +148,7 @@ impl Widget for Playlist {
                 hexpand: false,
                 model: &self.model.model,
                 vexpand: false,
-            }
+            },
         }
     }
 }
