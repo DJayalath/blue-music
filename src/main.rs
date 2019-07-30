@@ -238,6 +238,11 @@ impl Widget for Win {
                         clicked => playlist@NextSong,
                         tooltip_text: "Next song",
                     },
+                    gtk::ToolButton {
+                        icon_widget: &new_icon("shuffle"),
+                        clicked => playlist@NextSong,
+                        tooltip_text: "Shuffle",
+                    },
                     gtk::SeparatorToolItem {
                     },
                     gtk::ToolButton {
