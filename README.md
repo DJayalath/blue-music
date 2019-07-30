@@ -6,6 +6,11 @@ A super light-weight music player written in Rust. This is just a project that d
 ![Now playing](/screenshots/v0-1-2.png?raw=true "Optional Title")
 
 ## Testing Instructions
+### Dependencies
+- GTK 3
+- Pulse Audio
+
+###### If compiling, make sure you have the relevant development versions of these dependencies
 ### Download
 Grab the latest binaries [here](https://github.com/armytricks/blue-music/releases/latest)
 ### Linux
