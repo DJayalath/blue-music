@@ -6,6 +6,8 @@ A super light-weight music player written in Rust. This is just a project that d
 ![Now playing](/screenshots/v0-1-2.png?raw=true "Optional Title")
 
 ## Testing Instructions
+### Download
+Grab the latest binaries [here](https://github.com/armytricks/blue-music/releases/latest)
 ### Linux
 1. Extract the archive
 2. Navigate to 'blue-music' directory
